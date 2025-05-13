@@ -1,0 +1,14 @@
+import { Router } from "express";
+import * as authController from "./auth.controller.js";
+import expressasyncHandler from "express-async-handler";
+const authRouter = Router();
+authRouter.post("/signup", expressasyncHandler(authController.signUp));
+authRouter.post("/signin", expressasyncHandler(authController.signIn));
+authRouter.post("/verifyEmail/:token", expressasyncHandler(authController.verifyEmail));
+authRouter.post('/forgotPassword', expressasyncHandler(authController.forgotPassword));
+authRouter.put('/resetPassword/:token', expressasyncHandler(authController.resetPassword));
+authRouter.get('/getAllUsers', expressasyncHandler(authController.getAllUsers));
+authRouter.get('/getUser/:id', expressasyncHandler(authController.getUserById));
+authRouter.put('/updateUser/:id', expressasyncHandler(authController.updateUser));
+authRouter.delete('/deleteUser/:id', expressasyncHandler(authController.deleteUser));
+export default authRouter;

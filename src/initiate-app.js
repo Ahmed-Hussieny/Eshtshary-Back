@@ -1,0 +1,24 @@
+import connection_DB from "../DB/connection.js";
+import * as routers from './modules/index.routes.js';
+import { globalResponse } from './middlewares/global-response.js';
+import { rollbackUploadedFiles } from './middlewares/rollback-uploaded-files-Middleware.js';
+import { rollBackSavedDocument } from './middlewares/rollback-saved-Document.Middlewares.js';
+
+export const initiateApp = ({ app, express }) => {
+    app.use(express.json());
+    connection_DB();
+    app.use('/api/v1/auth', routers.authRouter);
+    app.use('/api/v1/therapist', routers.therapistRouter);
+    app.use('/api/v1/user', routers.userRouter);
+    app.use('/api/v1/session', routers.sessionRouter);
+    app.use('/api/v1/paymentWallet', routers.paymentWalletRouter);
+    app.use('/api/v1/course', routers.courseRouter);
+    app.use('/uploads/Therapists', express.static('uploads/Therapists'));
+    app.use('/uploads/PaymentWallets', express.static('uploads/PaymentWallets'));
+
+    app.use((req, res, next) => {
+        next({ message: "Route not found", status: 404 });
+    });
+    app.use(globalResponse, rollbackUploadedFiles, rollBackSavedDocument);
+
+};

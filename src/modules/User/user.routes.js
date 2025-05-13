@@ -1,0 +1,14 @@
+import { Router } from "express";
+import * as userController from "./user.controller.js";
+import expressasyncHandler from "express-async-handler";
+const userRouter = Router();
+userRouter.post("/signup", expressasyncHandler(userController.signUp));
+userRouter.post("/signin", expressasyncHandler(userController.signIn));
+userRouter.post("/verifyEmail/:token", expressasyncHandler(userController.verifyEmail));
+userRouter.post('/forgotPassword', expressasyncHandler(userController.forgotPassword));
+userRouter.put('/resetPassword/:token', expressasyncHandler(userController.resetPassword));
+userRouter.get('/getAllUsers', expressasyncHandler(userController.getAllUsers));
+userRouter.get('/getUser/:id', expressasyncHandler(userController.getUserById));
+userRouter.put('/updateUser/:id', expressasyncHandler(userController.updateUser));
+userRouter.delete('/deleteUser/:id', expressasyncHandler(userController.deleteUser));
+export default userRouter;
