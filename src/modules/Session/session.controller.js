@@ -1,4 +1,3 @@
-import mongoose from "mongoose";
 import PaymentWallet from "../../../DB/Models/paymentWallet.model.js";
 import Session from "../../../DB/Models/session.model.js";
 import Therapist from "../../../DB/Models/therapist.model.js";
@@ -12,9 +11,18 @@ import sendEmailService from "../../services/send-email.services.js";
 //& ================== CREATE SESSION ==================
 export const createSession = async (req, res, next) => {
   try {
-    const { therapistId, slots, paymentMethod, amount, currency, transferNumber } = req.body;
-    console.log("req.body", req.body);
+    const { therapistId, slots, paymentMethod, amount, currency, transferNumber, transferAccount } = req.body;
+
     const { _id: userId } = req.authUser;
+
+    // transactionImage
+    const transactionImage = req.files.transactionImage[0].path;
+    if (!transactionImage) {
+      return next({ message: "Transaction image is required", cause: 400 });
+    }
+    const transactionImageUrl = `${process.env.SERVER_URL}/uploads${
+      req.files.transactionImage[0].path.split("/uploads")[1]
+    }`;
 
     const therapist = await Therapist.findById(therapistId);
     if (!therapist) {
@@ -34,7 +42,6 @@ export const createSession = async (req, res, next) => {
     for (const requestedSlot of requestedSlots) {
       const slotDate = new Date(requestedSlot.date);
       const dayName = slotDate.toLocaleDateString('en-US', { weekday: 'long' });
-        console.log("dayName", dayName)
       const dayAvailability = therapist.availability.find(avail => avail.day === dayName);
       if (!dayAvailability) {
         console.log("dayAvailability")
@@ -111,23 +118,20 @@ export const createSession = async (req, res, next) => {
 
       // Handle payment
       let paymentWallet;
-      if (["vodafoneCash", "instapay"].includes(paymentMethod)) {
+      if (["vodafoneCash", "instaPay"].includes(paymentMethod)) {
         paymentWallet = await PaymentWallet.create({
           sessionId: sessions.map(session => session._id),
           userId,
           therapistId,
-          account: transferNumber,
+          account: transferNumber || transferAccount,
           amount,
           paymentMethod,
           status: "pending",
           currency,
+          type: "session",
+          transactionImage: transactionImageUrl, 
         });
       }
-
-      if (!paymentWallet) {
-        throw new Error("Payment failed");
-      }
-console.log("paymentWallet", paymentWallet)
       // Commit the transaction
 
       // Send email to both therapist and user
@@ -153,6 +157,7 @@ console.log("paymentWallet", paymentWallet)
       }
 
       return res.status(201).json({
+        success: true,
         message: "Session created successfully",
         sessions,
         paymentWallet: paymentWallet[0]

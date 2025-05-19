@@ -1,56 +1,54 @@
-import mongoose, { Schema, model } from "mongoose";
-import { systemRoles } from "../../src/utils/system-roles.js";
-const userProgressSchema = new Schema({
-  userId: {
-    type: Schema.ObjectId,
-    ref: systemRoles.USER,
-    required: true
-  },
-  courseId: {
-    type: Schema.ObjectId,
-    ref: 'Course',
-    required: true
-  },
-  completedVideos: [{
-    type: Schema.ObjectId,
-    ref: 'Video'
-  }],
-  answeredQuestions: [{
+import mongoose from "mongoose";
+
+const userProgressSchema = new mongoose.Schema({
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
     videoId: {
-      type: Schema.ObjectId,
-      ref: 'Video',
-      required: true
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Video',
+        required: true
     },
-    questionId: {
-      type: Schema.ObjectId,
-      ref: 'Question',
-      required: true
+    courseId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Course',
+        required: true
     },
-    answer: {
-      type: String
+    progress: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100
     },
-    isCorrect: {
-      type: Boolean
+    completed: {
+        type: Boolean,
+        default: false
     },
-    answeredAt: {
-      type: Date,
-      default: Date.now
+    quizScore: {
+        type: Number,
+        default: 0
+    },
+    quizPassed: {
+        type: Boolean,
+        default: false
+    },
+    order: {
+        type: Number,
+        default: 0
+    },
+    lastWatchedAt: {
+        type: Date,
+        default: Date.now
     }
-  }],
-  courseCompletionStatus: {
-    type: String,
-    enum: ['not-started', 'in-progress', 'completed'],
-    default: 'not-started'
-  },
-  lastAccessedVideoId: {
-    type: Schema.ObjectId,
-    ref: 'Video'
-  }
 }, {
-  timestamps: true
+    timestamps: true
 });
 
-userProgressSchema.index({ userId: 1, courseId: 1 }, { unique: true });
+// Compound index to ensure one progress record per user per video
+userProgressSchema.index({ userId: 1, videoId: 1 }, { unique: true });
 
-const UserProgress = mongoose.models.UserProgress || model("UserProgress", userProgressSchema);
+const UserProgress = mongoose.model('UserProgress', userProgressSchema);
+
 export default UserProgress;

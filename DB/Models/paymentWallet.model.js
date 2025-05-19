@@ -24,19 +24,29 @@ const paymentWalletSchema = new Schema({
         type: Number,
         required: true,
     },
-    paymentImage:{
+    transactionImage:{
         type: String,
         default: undefined,
     },
     paymentMethod:{
         type: String,
-        enum: ["vodafoneCash", "instapay"],
+        enum: ["vodafoneCash", "instaPay"],
         default: "vodafoneCash",
     },
     status: {
         type: String,
         enum: ["pending", "completed", "failed"],
         default: "pending",
+    },
+    type: {
+        type: String,
+        enum: ["session", "course"],
+        default: "session",
+    },
+    courseId: {
+        type: Schema.Types.ObjectId,
+        ref: "Course",
+        default: undefined,
     },
     currency: {
         type: String,

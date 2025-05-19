@@ -18,7 +18,12 @@ const courseSchema = new Schema(
       ref: systemRoles.THERAPIST,
       required: true,
     },
-    price: {
+    priceUSD: {
+      type: Number,
+      required: [true, "Please add a price"],
+      min: [0, "Price cannot be negative"],
+    },
+    priceEGP: {
       type: Number,
       required: [true, "Please add a price"],
       min: [0, "Price cannot be negative"],
@@ -29,7 +34,16 @@ const courseSchema = new Schema(
         ref: "Video",
       },
     ],
-
+    enrolledUsers: [
+      {
+        type: mongoose.Schema.ObjectId,
+        ref: "User",
+      },
+    ],
+    enrolledUsersCount: {
+      type: Number,
+      default: 0,
+    },
     thumbnail: String,
   },
   {

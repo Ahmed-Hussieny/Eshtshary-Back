@@ -13,7 +13,7 @@ paymentWalletRouter.post(
   multerMiddlewareLocal({
     destinationFolder: "PaymentWallets",
     extensions: allowedExtensions.image,
-    fields: [{ name: "image", maxCount: 1 }],
+    fields: [{ name: "transactionImage", maxCount: 1 }],
   }),
   expressasyncHandler(paymentWalletController.createPaymentWallet)
 );
@@ -40,5 +40,11 @@ paymentWalletRouter.get(
     "/getPaymentWalletForUser",
     userAuth([systemRoles.USER]),
     expressasyncHandler(paymentWalletController.getPaymentWalletForUser)
+);
+
+paymentWalletRouter.get(
+    "/getPaymentWalletByCourseId/:courseId",
+    userAuth([systemRoles.USER]),
+    expressasyncHandler(paymentWalletController.getPaymentWalletByCourseId)
 );
 export default paymentWalletRouter;

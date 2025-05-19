@@ -25,9 +25,10 @@ const questionSchema = new Schema(
   },
   },
   {
-    timestamps: true,
+    timestamps: true
   }
 );
+
 
 const Question = mongoose.models.Question || model("Question", questionSchema);
 export default Question;

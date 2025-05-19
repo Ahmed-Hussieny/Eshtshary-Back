@@ -6,7 +6,7 @@ export const createPaymentWallet = async (req, res, next) => {
     const { sessionId, therapistId, account, amount } = req.body;
     const userId = req.authUser._id;
 
-    const image = req?.files?.image?.[0]?.path;
+    const image = req?.files?.transactionImage?.[0]?.path;
     if (!image) {
         return next({
         cause: 400,
@@ -184,9 +184,7 @@ export const deletePaymentWallet = async (req, res, next) => {
 //& ==================== get paymentWallet by userId =========================
 export const getPaymentWalletForUser = async (req, res, next) => {
     const { _id } = req.authUser;
-    const paymentWallets = await PaymentWallet.find({userId:_id},{
-        status: "pending",
-    });
+    const paymentWallets = await PaymentWallet.find({userId:_id,status:"pending"});
     console.log("id", paymentWallets);
 
     if (!paymentWallets) {
@@ -200,6 +198,25 @@ export const getPaymentWalletForUser = async (req, res, next) => {
         data: paymentWallets,
     });
 }
+
+//& ==================== get paymentWallet by courseId =========================
+export const getPaymentWalletByCourseId = async (req, res, next) => {
+    const { courseId } = req.params;
+    const paymentWallets = await PaymentWallet.find({courseId}).populate("sessionId").populate("userId").populate("therapistId");
+    if (!paymentWallets) {
+        return next({
+            cause: 400,
+            message: "فشل استرجاع محفظة الدفع",
+        });
+    }
+    return res.status(200).json({
+        success: true,
+        status: "success",
+        message: "تم استرجاع محفظة الدفع بنجاح",
+        data: paymentWallets,
+    });
+}
+
 //& ==================== get paymentWallet by therapistId =========================
 export const getPaymentWalletByTherapistId = async (req, res, next) => {
     const { therapistId } = req.params;

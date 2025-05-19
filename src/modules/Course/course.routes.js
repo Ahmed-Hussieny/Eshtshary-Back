@@ -11,11 +11,49 @@ const courseRouter = Router();
 courseRouter.post(
     "/createCourse",
     userAuth([systemRoles.THERAPIST]),
-      multerMiddlewareLocal({
+    multerMiddlewareLocal({
         destinationFolder: "Courses",
         extensions: allowedExtensions.image,
         fields: [{ name: "thumbnail", maxCount: 1 }],
-      }),
+    }),
     expressasyncHandler(courseController.createCourse)
 );
+
+// New routes for course enrollment
+courseRouter.post(
+    "/enroll/:courseId",
+    userAuth([systemRoles.USER]),
+    multerMiddlewareLocal({
+        destinationFolder: "PaymentWallets",
+        extensions: allowedExtensions.image,
+        fields: [{ name: "transactionImage", maxCount: 1 }],
+    }),
+    expressasyncHandler(courseController.enrollInCourse)
+);
+
+courseRouter.post(
+    "/acceptPayment/:paymentWalletId",
+    userAuth([systemRoles.THERAPIST]),
+    expressasyncHandler(courseController.acceptPayment)
+);
+
+courseRouter.get(
+    "/getEnrolledCourses",
+    userAuth([systemRoles.USER]),
+    expressasyncHandler(courseController.getEnrolledCourses)
+);
+
+// Get detailed information about an enrolled course
+courseRouter.get(
+    "/getEnrolledCourseDetails/:courseId",
+    userAuth([systemRoles.USER]),
+    expressasyncHandler(courseController.getEnrolledCourseDetails)
+);
+
+courseRouter.get(
+    "/getCourses",
+    userAuth([systemRoles.USER]),
+    expressasyncHandler(courseController.getCourses)
+);
+
 export default courseRouter;

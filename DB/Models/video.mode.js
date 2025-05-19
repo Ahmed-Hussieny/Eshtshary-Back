@@ -23,16 +23,22 @@ const videoSchema = new Schema(
     type: Number,
     required: true,
     default: 0
-  },
-  questions: [{
-    type: mongoose.Schema.ObjectId,
-    ref: 'Question'
-  }],
+  }
   },
   {
     timestamps: true,
+    toObject: { virtuals: true },
+    toJSON: { virtuals: true }
   }
 );
+
+// add virtual field to get the questions
+videoSchema.virtual('questions', {
+  ref: 'Question',
+  localField: '_id',
+  foreignField: 'videoId',
+  justOne: false
+});
 
 const Video = mongoose.models.Video || model("Video", videoSchema);
 export default Video;
