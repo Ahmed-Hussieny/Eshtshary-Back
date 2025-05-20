@@ -8,7 +8,6 @@ import expressAsyncHandler from "express-async-handler";
 const testRouter = Router();
 
 testRouter.post("/create",
-    userAuth([systemRoles.THERAPIST]),
     multerMiddlewareLocal({
     destinationFolder: "Tests",
     extensions: allowedExtensions.image,

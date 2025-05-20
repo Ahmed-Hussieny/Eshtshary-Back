@@ -22,6 +22,7 @@ export const initiateApp = ({ app, express }) => {
     app.use('/uploads/Courses', express.static('uploads/Courses'));
     app.use('/uploads/Tests', express.static('uploads/Tests'));
     app.use('/uploads/Products', express.static('uploads/Products'));
+    app.use('/uploads/Certificates', express.static('uploads/Certificates'));
 
     app.use((req, res, next) => {
         next({ message: "Route not found", status: 404 });

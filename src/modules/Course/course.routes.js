@@ -56,4 +56,9 @@ courseRouter.get(
     expressasyncHandler(courseController.getCourses)
 );
 
+courseRouter.get(
+    "/generateCertificate/:courseId",
+    userAuth([systemRoles.USER]),
+    expressasyncHandler(courseController.generateCertificate)
+);
 export default courseRouter;

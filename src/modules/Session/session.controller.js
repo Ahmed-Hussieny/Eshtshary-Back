@@ -1,181 +1,93 @@
-import PaymentWallet from "../../../DB/Models/paymentWallet.model.js";
 import Session from "../../../DB/Models/session.model.js";
 import Therapist from "../../../DB/Models/therapist.model.js";
 import User from "../../../DB/Models/user.model.js";
-import PaymobService from "../../services/paymob.js";
 import ZoomService from "../../services/zoom.js";
 import { sendDoubleMail } from "../../utils/sendDoubleMail.js";
-import { isTherapistAvailable } from "./utils/therapistHandlers.js";
-import sendEmailService from "../../services/send-email.services.js";
+import { createSessions, handelCreatePaymentWallet, isRequestedSlotsAvailable, sendEmailToUser } from "./utils/session.handler.js";
 
 //& ================== CREATE SESSION ==================
 export const createSession = async (req, res, next) => {
-  try {
-    const { therapistId, slots, paymentMethod, amount, currency, transferNumber, transferAccount } = req.body;
+  const {
+    therapistId,
+    slots,
+    paymentMethod,
+    amount,
+    currency,
+    transferNumber,
+    transferAccount,
+  } = req.body;
+  const { _id: userId } = req.authUser;
 
-    const { _id: userId } = req.authUser;
+  // transactionImage
+  const transactionImage = req.files.transactionImage[0].path;
+  if (!transactionImage) {
+    return next({ message: "الرجاء اضافه صوره التحويل", cause: 400 });
+  }
+  const transactionImageUrl = `${process.env.SERVER_URL}/uploads${
+    req.files.transactionImage[0].path.split("/uploads")[1]
+  }`;
 
-    // transactionImage
-    const transactionImage = req.files.transactionImage[0].path;
-    if (!transactionImage) {
-      return next({ message: "Transaction image is required", cause: 400 });
-    }
-    const transactionImageUrl = `${process.env.SERVER_URL}/uploads${
-      req.files.transactionImage[0].path.split("/uploads")[1]
-    }`;
+  const therapist = await Therapist.findById(therapistId);
+  if (!therapist) {
+    return next({ message: "Therapist not found", cause: 404 });
+  }
 
-    const therapist = await Therapist.findById(therapistId);
-    if (!therapist) {
-      return next({ message: "Therapist not found", cause: 404 });
-    }
+  // Parse the slots string into an array of objects
+  let requestedSlots = JSON.parse(slots);
 
-    // Parse the slots string into an array of objects
-    let requestedSlots;
-    try {
-      requestedSlots = JSON.parse(slots);
-    } catch (error) {
-      console.log(error)
-      return next({ message: "Invalid slots format", cause: 400 });
-    }
-
-    // Check all slots first before creating any sessions
-    for (const requestedSlot of requestedSlots) {
-      const slotDate = new Date(requestedSlot.date);
-      const dayName = slotDate.toLocaleDateString('en-US', { weekday: 'long' });
-      const dayAvailability = therapist.availability.find(avail => avail.day === dayName);
-      if (!dayAvailability) {
-        console.log("dayAvailability")
-        return next({ 
-          message: `Therapist is not available on ${dayName}`, 
-          cause: 400 
-        });
-      }
-      console.log("dayAvailability", dayAvailability)
-      const therapistSlot = dayAvailability.slots.find(slot => 
-        slot._id.toString() === requestedSlot.slotId
-      );
-      
-      if (!therapistSlot) {
-        console.log("therapistSlot")
-
-        return next({ 
-          message: `Slot not found in therapist's availability`, 
-          cause: 400 
-        });
-      }
-
-      if (!therapistSlot.isAvailable) {
-        console.log("therapistSlot.isAvailable")
-        return next({ 
-          message: `Slot at ${requestedSlot.timeFrom} on ${requestedSlot.date} is not available`, 
-          cause: 400 
-        });
-      }
-
-      if (therapistSlot.datesBooked && therapistSlot.datesBooked.some(date => 
-        new Date(date).toDateString() === slotDate.toDateString()
-      )) {
-        console.log("requestedSlot")
-
-        return next({ 
-          message: `Slot at ${requestedSlot.timeFrom} on ${requestedSlot.date} is already booked`, 
-          cause: 400 
-        });
-      }
-    }
-    try {
-      const sessions = [];
-      
-      for (const requestedSlot of requestedSlots) {
-        const slotDate = new Date(requestedSlot.date);
-        const dayName = slotDate.toLocaleDateString('en-US', { weekday: 'long' });
-        const dayAvailability = therapist.availability.find(avail => avail.day === dayName);
-        const therapistSlot = dayAvailability.slots.find(slot => 
-          slot._id.toString() === requestedSlot.slotId
-        );
-        console.log("therapistSlot", therapistSlot)
-
-        // Create a new session
-        const newSession = await Session.create({
-          therapistId,
-          userId,
-          slotId: therapistSlot._id,
-          date: slotDate,
-          startTime: therapistSlot.from,
-          endTime: therapistSlot.to,
-          duration: therapistSlot.duration,
-          status: "pending",
-          notes: "",
-          meetingLink: "",
-        });
-
-        // Update the therapist's availability
-        therapistSlot.datesBooked.push(requestedSlot.date);
-        await therapist.save();
-
-        sessions.push(newSession);
-      }
-
-      // Handle payment
-      let paymentWallet;
-      if (["vodafoneCash", "instaPay"].includes(paymentMethod)) {
-        paymentWallet = await PaymentWallet.create({
-          sessionId: sessions.map(session => session._id),
-          userId,
-          therapistId,
-          account: transferNumber || transferAccount,
-          amount,
-          paymentMethod,
-          status: "pending",
-          currency,
-          type: "session",
-          transactionImage: transactionImageUrl, 
-        });
-      }
-      // Commit the transaction
-
-      // Send email to both therapist and user
-      const user = await User.findById(userId);
-      console.log("user", user)
-      const emailSubject = `New Session Created`;
-      const emailMessage = `Your therapy session is under review. Here are the details: ${sessions.map(session => `
-        Session ID: ${session._id}
-        Therapist: ${therapist.name}
-        Date: ${session.date}
-        Start Time: ${session.startTime}
-        End Time: ${session.endTime}
-      `).join("\n")}`;
-
-      const isEmailSentClient = await sendEmailService({
-        to: user.email,
-        subject: emailSubject,
-        message: emailMessage
-      });
-      
-      if(!isEmailSentClient) {
-        console.error('Email failed to send, but session was created');
-      }
-
-      return res.status(201).json({
-        success: true,
-        message: "Session created successfully",
-        sessions,
-        paymentWallet: paymentWallet[0]
-      });
-
-    } catch (error) {
-      console.log(error)
-      throw error;
-    }
-
-  } catch (error) {
-    console.error("Error creating session:", error);
+  // Check all slots first before creating any sessions
+  const isSlotsAvailable = await isRequestedSlotsAvailable(
+    therapist,
+    requestedSlots
+  );
+  if (!isSlotsAvailable.status) {
     return next({
-      cause: 500,
-      message: "Internal server error",
-      error: error.message
+      message: isSlotsAvailable.message,
+      cause: 400,
     });
   }
+
+  const sessions = await createSessions(therapist, userId, requestedSlots);
+  if (!sessions || sessions.length === 0) {
+    return next({ message: "No sessions created", cause: 400 });
+  }
+
+  // Handle payment
+  const paymentObject = {
+    userId,
+    therapistId,
+    amount,
+    currency,
+    paymentMethod,
+    transferNumber,
+    transferAccount,
+    transactionImageUrl,
+    sessions,
+  };
+  let paymentWallet = await handelCreatePaymentWallet(paymentObject);
+  if (!paymentWallet) {
+    return next({ message: "Payment wallet not created", cause: 400 });
+  }
+
+  // Send email to both therapist and user
+  const user = await User.findById(userId);
+  if (!user) {
+    return next({ message: "User not found", cause: 404 });
+  }
+
+  const isEmailSentClient = await sendEmailToUser(user, sessions, therapist);
+
+  if (!isEmailSentClient.status) {
+    return next({
+      message: isEmailSentClient.message,
+      cause: 400,
+    });
+  }
+
+  return res.status(201).json({
+    success: true,
+    message: "تم انشاء الجلسات بنجاح الرجاء الانتظار حتي يتم قبولها",
+  });
 };
 
 //& ================== CREATE ZOOM MEETING ==================
@@ -193,7 +105,6 @@ export const createZoomMeeting = async (req, res, next) => {
     return next({ message: "Session not found", cause: 404 });
   }
   const zoom = new ZoomService();
-  console.log("session", session);
   const result = await zoom.createMeeting({
     topic: `Therapy Session with ${session.therapistId.name}`,
     type: 2,

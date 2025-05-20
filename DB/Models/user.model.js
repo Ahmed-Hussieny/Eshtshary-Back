@@ -35,7 +35,17 @@ const userSchema = new Schema({
     resetPasswordTokenExpires :{
         type: Date,
         default: undefined,
-    }
+    },
+    certificates: [{
+        courseId: {
+            type: Schema.Types.ObjectId,
+            ref: "Course",
+        },
+        certificateUrl: {
+            type: String,
+            default: undefined,
+        },
+    }],
 }, {
     timestamps: true,
 });

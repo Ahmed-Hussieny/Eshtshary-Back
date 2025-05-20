@@ -4,6 +4,8 @@ import Video from "../../../DB/Models/video.mode.js";
 import UserProgress from "../../../DB/Models/userProgress.model.js";
 import PaymentWallet from "../../../DB/Models/paymentWallet.model.js";
 import sendEmailService from "../../services/send-email.services.js";
+import { HandleGenerateCertificate } from "./utils/generateCertificate.js";
+import User from "../../../DB/Models/user.model.js";
 
 //& ===================== ADD COURSE =====================
 export const createCourse = async (req, res, next) => {
@@ -115,9 +117,6 @@ export const enrollInCourse = async (req, res, next) => {
     if (isEnrolled) {
         return next({ message: "أنت مسجل بالفعل في هذه الدورة", status: 400 });
     }
-    course.enrolledUsersCount++;
-
-
     // handel payment
     const paymentWallet = await PaymentWallet.create({
         userId,
@@ -130,7 +129,6 @@ export const enrollInCourse = async (req, res, next) => {
         account: transferNumber || transferAccount,
         transactionImage: transactionImageUrl,
     });
-    console.log("paymentWallet", paymentWallet);
     if(!paymentWallet) {
         return next({ message: "فشل الدفع", status: 400 });
     }
@@ -140,20 +138,6 @@ export const enrollInCourse = async (req, res, next) => {
         status: "success",
         message: "تم انشاء الدفعة بنجاح بمجرد تاكيد الدفع سيتم ارسال اشعار بالبريد الالكتروني"
     });
-
-    
-    // Add user to enrolled users
-    // course.enrolledUsers.push(userId);
-    // await course.save();
-
-    // return res.status(200).json({
-    //     success: true,
-    //     status: "success",
-    //     message: "تم التسجيل في الدورة بنجاح",
-    //     data: {
-    //         course
-    //     }
-    // });
 };
 
 // & ======================= Enroll course For the user when the payment is approved =======================
@@ -330,5 +314,66 @@ export const getCourses = async (req, res, next) => {
         data: {
             courses 
         }
+    });
+};
+
+//& ===================== Generate Certificate =====================
+export const generateCertificate = async (req, res, next) => {
+    const { courseId } = req.params;
+    const { id: userId } = req.authUser;
+    console.log("courseId", courseId);
+    // Check if course exists
+    const course = await Course.findById(courseId).populate("therapistId");
+    if (!course) {
+        return next({ message: "الدورة غير موجودة", status: 404 });
+    }
+    const user = await User.findById(userId);
+    if (!user) {
+        return next({ message: "المستخدم غير موجود", status: 404 });
+    }
+
+    // Check if user has already generated a certificate for this course
+    const existingCertificate = user.certificates.find(cert => cert.courseId.toString() === courseId);
+    if (existingCertificate) {
+        return res.status(200).json({
+            status: "success",
+            data: {
+                certificateUrl: existingCertificate.certificateUrl,
+            },
+        });
+    }
+
+    // Check if user is enrolled
+    const isEnrolled = course.enrolledUsers.includes(userId);
+    if (!isEnrolled) {
+        return next({ message: "أنت غير مسجل في هذه الدورة", status: 403 });
+    }
+    // Check if course is completed
+    for (const video of course.videos) {
+        const progress = await UserProgress.findOne({ userId, videoId: video._id });
+        if (!progress || !progress.completed) {
+            return next({ message: "الدورة غير مكتملة", status: 403 });
+        }
+    }
+    
+    // Generate certificate
+    const certificate = await HandleGenerateCertificate({
+        course: course.title,
+        user: user.username,
+        therapist: course.therapistId.name,
+        date: new Date(),
+    });
+
+    // Save certificate to user
+    user.certificates.push({
+        courseId: course._id.toString(),
+        certificateUrl: `${process.env.SERVER_URL}/${certificate.toString()}`,
+    });
+    await user.save();
+    return res.status(200).json({
+        status: "success",
+        data: {
+            certificateUrl: `${process.env.SERVER_URL}/${certificate.toString()}`,
+        },
     });
 };

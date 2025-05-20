@@ -5,15 +5,6 @@ import fs from "fs";
 //& ===================== CREATE TEST =====================
 export const createTest = async (req, res, next) => {
     const { title, description, time, type, questions, totalPoints } = req.body;
-    const { _id:therapistId } = req.authTherapist;
-    console.log(title, description, time, type, questions, totalPoints);
-
-    //& check if the therapist is exists
-    const therapist = await Therapist.findById(therapistId);
-    if(!therapist) {
-        return next({ message: "Therapist not found", status: 404 });
-    }
-
     //& check if the image is exists
     if(!req.files.image[0].path) {
         return next({ message: "Image is required", status: 400 });
@@ -51,15 +42,14 @@ export const createTest = async (req, res, next) => {
                 points: Number(option.points)
             }))
         })),
-        totalPoints,
-        therapistId
+        totalPoints
     });
     if(!test) {
         console.log("Test not created");
         return next({ message: "Test not created", status: 400 });
     }
-    console.log("Test created");
     return res.status(201).json({
+        success: true,
         message: "Test created successfully",
         test
     });

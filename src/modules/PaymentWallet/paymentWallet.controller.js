@@ -1,7 +1,11 @@
 import PaymentWallet from "../../../DB/Models/paymentWallet.model.js";
 import Session from "../../../DB/Models/session.model.js";
+import Therapist from "../../../DB/Models/therapist.model.js";
 import sendEmailService from "../../services/send-email.services.js";
+import { sendApprovalPaymentWallet, sendApprovalPaymentWalletForCourse, sendRejectPaymentWallet, sendRejectPaymentWalletForCourse } from "./utils/paymentWallet.handler.js";
+import Course from '../../../DB/Models/course.model.js';
 
+//Done
 export const createPaymentWallet = async (req, res, next) => {
     const { sessionId, therapistId, account, amount } = req.body;
     const userId = req.authUser._id;
@@ -37,8 +41,7 @@ export const createPaymentWallet = async (req, res, next) => {
         data: newPaymentWallet,
     });
 };
-
-
+//Done
 //& ==================== get all paymentWallets =========================
 export const getAllPaymentWallets = async (req, res, next) => {
     const paymentWallets = await PaymentWallet.find({
@@ -56,78 +59,161 @@ export const getAllPaymentWallets = async (req, res, next) => {
     });
 };
 
+//Done
 //& ==================== approve paymentWallet by id =========================
 export const approvePaymentWallet = async (req, res, next) => {
     const { id } = req.params;
-    const paymentWallet = await PaymentWallet.findById(id);
+    const paymentWallet = await PaymentWallet.findById(id).populate("userId").populate("therapistId").populate("courseId");
     if (!paymentWallet) {
         return next({
             cause: 400,
             message: "فشل تحديث محفظة الدفع",
         });
     }
-    // console.log("session", paymentWallet);
+    // approve the payment wallet for Sessions
+    if(paymentWallet.type === "session") {
+    const sessions = [];
+    const sessionsId = paymentWallet.sessionId;
+    for(const id of sessionsId) {
+        const session = await Session.findById(id);
+        if (!session) {
+            return next({
+                cause: 400,
+                message: "فشل استرجاع الجلسة",
+            });
+        }
+        session.status = "scheduled";
+        await session.save();
+        sessions.push(session);
+    }
 
-    const session = await Session.findById(paymentWallet.sessionId).populate("userId").populate("therapistId");
-    if (!session) {
+    const isMailsSent = await sendApprovalPaymentWallet({
+        user: paymentWallet.userId,
+        therapist: paymentWallet.therapistId,
+        sessions,
+    });
+    if(!isMailsSent.status){
         return next({
             cause: 400,
-            message: "فشل استرجاع الجلسة",
+            message: isMailsSent.message,
         });
     }
-    console.log("session", session);
-    const isEmailSent1 = await sendEmailService({
-            to: session.userId.email,
-            subject: 'ADHD - Payment Approved',
-            message: `
-                Dear ${session.userId.username},
-                Thank you for your payment.
-                Your payment for the session on ${session.date} has been approved.
-                Please check your session list for more details.
-            `,
+    }
+    // approve the payment wallet for Courses
+    if(paymentWallet.type === "course") {
+        const course = await Course.findById(paymentWallet.courseId);
+        if (!course) {
+            return next({
+                cause: 400,
+                message: "فشل استرجاع الدورة",
+            });
+        }
+        const isUserInCourse = course.enrolledUsers.some(user => user.toString() === paymentWallet.userId.toString());   
+        if (isUserInCourse) {
+            return next({
+                message: "انت بالفعل مشترك في هذه الدورة",
+                cause: 400,
+            });
+        }
+        course.enrolledUsers.push(paymentWallet.userId);
+        course.enrolledUsersCount++;
+        await course.save();
+        const isMailsSent = await sendApprovalPaymentWalletForCourse({
+            paymentWallet,
         });
-        if(!isEmailSent1) return next({message: 'Email is not sent', cause: 500});
-        const isEmailSent2 = await sendEmailService({
-            to: session.therapistId.email,
-            subject: 'New Session',
-            message: `
-                Dear ${session.therapistId.username},
-                Congratulations!
-                A new session has been created for you with the user ${session.userId.username} on ${session.date.toString().split('T')[0]} at ${session.startTime}.
-                Please check your session list for more details.
-            `,
-        });
-        if(!isEmailSent2) return next({message: 'Email is not sent', cause: 500});
-        session.status = "scheduled";
-        paymentWallet.status = "completed";
-        await session.save();
-        await paymentWallet.save();
+        if(!isMailsSent.status){
+            return next({
+                cause: 400,
+                message: isMailsSent.message,
+            });
+        }
+    }
+
+    paymentWallet.status = "completed";
+    await paymentWallet.save();
+
+
+    
     return res.status(200).json({
-        message: "تم تحديث محفظة الدفع بنجاح",
+        success: true,
+        message: "تم قبول محفظة الدفع بنجاح",
         data: paymentWallet,
     });
 };
 
+//Done
 //& ==================== reject paymentWallet by id =========================
 export const rejectPaymentWallet = async (req, res, next) => {
     const { id } = req.params;
-    const paymentWallet = await PaymentWallet.findById(id);
+    const paymentWallet = await PaymentWallet.findById(id).populate("userId").populate("courseId");
     if (!paymentWallet) {
         return next({
             cause: 400,
             message: "فشل تحديث محفظة الدفع",
         });
     }
-    const deleteSession = await Session.findByIdAndDelete(paymentWallet.sessionId.toString());
-    if (!deleteSession) {
+    // reject the payment wallet for Sessions
+    if(paymentWallet.type === "session") {
+    const sessions = [];
+    for(const id of paymentWallet.sessionId) {
+        const session = await Session.findById(id);
+        if (!session) {
+            return next({
+                cause: 400,
+                message: "فشل استرجاع الجلسة",
+            });
+        }
+        // remove the date booked from the therapist's availability
+        const therapist = await Therapist.findById(session.therapistId);
+        const dayName = session.date.toLocaleDateString('en-US', { weekday: 'long' });
+        therapist.availability.forEach((day) => {
+            if (day.day === dayName) {
+                const slot = day.slots.find((slot) => slot._id.toString() === session.slotId.toString());
+                if (slot) {
+                    slot.datesBooked = slot.datesBooked.filter(date => date.toString() !== session.date.toString());
+                    slot.bookedBy = slot.bookedBy.filter(userId => userId.toString() !== session.userId.toString());
+                }
+            }
+        });
+        await therapist.save();
+        // update the session status to rejected
+        session.status = "rejected";
+        await session.save();
+        sessions.push(session);
+    }
+    const isMailsSent = await sendRejectPaymentWallet({
+        user: paymentWallet.userId,
+        sessions
+    })
+    if(!isMailsSent.status){
         return next({
             cause: 400,
-            message: "فشل حذف الجلسة",
+            message: isMailsSent.message,
         });
     }
+    }
+    // reject the payment wallet for Courses
+    if(paymentWallet.type === "course") {
+        const course = await Course.findById(paymentWallet.courseId);
+        if (!course) {
+            return next({
+                cause: 400,
+                message: "فشل استرجاع الدورة",
+            });
+        }
+        const sendRejectPaymentWallet = await sendRejectPaymentWalletForCourse({paymentWallet});
+        if(!sendRejectPaymentWallet.status){
+            return next({
+                cause: 400,
+                message: sendRejectPaymentWallet.message,
+            });
+        }
+    }
+
     paymentWallet.status = "failed";
     await paymentWallet.save();
 
+   
     return res.status(200).json({
         message: "تم تحديث محفظة الدفع بنجاح",
         data: paymentWallet,
@@ -199,14 +285,34 @@ export const getPaymentWalletForUser = async (req, res, next) => {
     });
 }
 
+//Done
 //& ==================== get paymentWallet by courseId =========================
 export const getPaymentWalletByCourseId = async (req, res, next) => {
     const { courseId } = req.params;
-    const paymentWallets = await PaymentWallet.find({courseId}).populate("sessionId").populate("userId").populate("therapistId");
-    if (!paymentWallets) {
+    const { _id } = req.authUser;
+    const course = await Course.findById(courseId);
+    if (!course) {
         return next({
             cause: 400,
-            message: "فشل استرجاع محفظة الدفع",
+            message: "فشل استرجاع الدورة",
+        });
+    }
+    const isUserInCourse = course.enrolledUsers.some(user => user.toString() === _id.toString());   
+    if (isUserInCourse) {
+        return next({
+            message: "انت بالفعل مشترك في هذه الدورة",
+            cause: 400,
+        });
+    }
+    const paymentWallets = await PaymentWallet.findOne({courseId,
+        userId: _id,
+        status: "pending",
+        type: "course",
+    });
+    if(paymentWallets) {
+        return next({
+            message: "لديك دفع قيد الانتظار لهذه الدورة",
+            cause: 400,
         });
     }
     return res.status(200).json({

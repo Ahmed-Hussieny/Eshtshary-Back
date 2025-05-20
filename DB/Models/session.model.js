@@ -36,7 +36,7 @@ const sessionSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["scheduled", "completed", "canceled", "no-show","pending"],
+      enum: ["scheduled", "completed", "canceled", "no-show","pending", "rejected"],
       default: "scheduled",
     },
     notes: {
