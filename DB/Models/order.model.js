@@ -16,15 +16,15 @@ const orderSchema = new Schema({
         postalCode: { type: String, required: true },
         country: { type: String, required: true }
     },
-    phoneNumbers: [
-        { type: String, required: true }
-    ],
+    phoneNumber:{ 
+        type: String, required: true 
+    },
     shippingPrice: { type: Number, required: true },
-    coupon: { type: Schema.Types.ObjectId, ref: 'Coupon' },
     totalPrice: { type: Number, required: true },
-    paymentMethod: { type: String, enum:['Cash', 'Stripe', 'Tap'], required: true },
+    paymentMethod: { type: String, enum:['Paymob', 'vodafoneCash', 'instaPay'], required: true },
 
     orderStatus:{type: String, enum:['Pending', 'Paid', 'Delivered', 'Placed', 'Cancelled'], required: true, default:'Pending'},
+
     isPaid:{type: Boolean, default: false},
     paidAt: {type: String},
     isDelivered:{type: Boolean, default: false},
@@ -33,7 +33,7 @@ const orderSchema = new Schema({
     isCancelled:{type: Boolean, default: false},
     cancelledAt: {type: String},
     cancelledBy:{type: Schema.Types.ObjectId, ref: 'User'},
-    // coupon
+
 }, { timestamps: true });
 
 const Order = mongoose.models.Order || model('Order', orderSchema);

@@ -17,6 +17,8 @@ export const initiateApp = ({ app, express }) => {
     app.use('/api/v1/test', routers.testRouter);
     app.use('/api/v1/product', routers.productRouter);
     app.use('/api/v1/cart', routers.cartRouter);
+    app.use('/api/v1/order', routers.orderRouter);
+    
     app.use('/uploads/Therapists', express.static('uploads/Therapists'));
     app.use('/uploads/PaymentWallets', express.static('uploads/PaymentWallets'));
     app.use('/uploads/Courses', express.static('uploads/Courses'));

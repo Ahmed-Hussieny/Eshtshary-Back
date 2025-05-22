@@ -1,5 +1,4 @@
 export const globalResponse = (err, req, res, next) => {
-    // console.log(err);
     if(err){
         return res.status(err['cause'] || 500).json({
             success: false,

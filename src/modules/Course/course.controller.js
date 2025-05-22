@@ -377,3 +377,163 @@ export const generateCertificate = async (req, res, next) => {
         },
     });
 };
+
+
+//& ==================== GET Therapist Courses ====================
+export const getTherapistCourses = async (req, res, next) => {
+    const { id: therapistId } = req.authTherapist;
+
+    const courses = await Course.find({ therapistId }).populate("therapistId");
+
+    return res.status(200).json({
+        status: "success",
+        data: {
+            courses 
+        }
+    });
+};
+//& ==================== GET Course Details ====================
+export const getTherapistCourseDetails = async (req, res, next) => {
+    const { courseId } = req.params;
+    const { id: therapistId } = req.authTherapist;
+
+    const course = await Course.findById(courseId).populate("therapistId").populate({
+            path: 'videos',
+            select: 'title order duration videoUrl',
+            populate: {
+                path: 'questions',
+                select: 'questionText options correctAnswer type'
+            }
+        });
+
+    if (!course) {
+        return next({ message: "الدورة غير موجودة", status: 404 });
+    }
+
+    if (course.therapistId._id.toString() !== therapistId) {
+        return next({ message: "ليس لديك صلاحية للوصول إلى هذه الدورة", status: 403 });
+    }
+
+    return res.status(200).json({
+        status: "success",
+        data: {
+            course 
+        }
+    });
+};
+//& ========================= Update Course ===================
+export const updateCourseByTherapist = async (req, res, next) => {
+    const { courseId } = req.params;
+    const { id: therapistId } = req.authTherapist;
+    const { title, description, priceUSD, priceEGP, videos } = req.body;
+
+    // Parse the videos string if it's a string
+    let videosData = [];
+    try {
+        videosData = typeof videos === 'string' ? JSON.parse(videos) : videos;
+    } catch (err) {
+        return next({ message: "صيغة الفيديوهات غير صالحة", status: 400 });
+    }
+
+    // Check if course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+        return next({ message: "الدورة غير موجودة", status: 404 });
+    }
+
+    // Check if therapist is authorized to update the course
+    if (course.therapistId.toString() !== therapistId) {
+        return next({ message: "ليس لديك صلاحية لتحديث هذه الدورة", status: 403 });
+    }
+
+    // Update course details
+    course.title = title || course.title;
+    course.description = description || course.description;
+    course.priceUSD = priceUSD || course.priceUSD;
+    course.priceEGP = priceEGP || course.priceEGP;
+
+    // Update thumbnail if provided
+    if (req.files?.thumbnail) {
+        const thumbnail = `${process.env.SERVER_URL}/uploads${
+            req.files.thumbnail[0].path.split("/uploads")[1]
+        }`;
+        course.thumbnail = thumbnail;
+    }
+
+    const videoIds = [];
+
+    if (videosData && videosData.length > 0) {
+        for (const video of videosData) {
+            let videoDoc;
+
+            if (video._id) {
+                // Update existing video
+                videoDoc = await Video.findByIdAndUpdate(
+                    video._id,
+                    {
+                        title: video.title,
+                        videoUrl: video.videoUrl,
+                        duration: video.duration,
+                        order: video.order
+                    },
+                    { new: true }
+                );
+            } else {
+                // Create new video
+                videoDoc = await Video.create({
+                    courseId: course._id,
+                    title: video.title,
+                    videoUrl: video.videoUrl,
+                    duration: video.duration,
+                    order: video.order
+                });
+            }
+
+            videoIds.push(videoDoc._id);
+
+            const questionIds = [];
+
+            if (video.questions && video.questions.length > 0) {
+                for (const question of video.questions) {
+                    if (question._id) {
+                        // Update existing question
+                        const updatedQuestion = await Question.findByIdAndUpdate(
+                            question._id,
+                            {
+                                ...question,
+                                videoId: videoDoc._id
+                            },
+                            { new: true }
+                        );
+                        if (updatedQuestion) {
+                            questionIds.push(updatedQuestion._id);
+                        }
+                    } else {
+                        // Create new question
+                        const newQuestion = await Question.create({
+                            ...question,
+                            videoId: videoDoc._id
+                        });
+                        questionIds.push(newQuestion._id);
+                    }
+                }
+            }
+
+            // Optionally update the video's questions list (if needed)
+            videoDoc.questions = questionIds;
+            await videoDoc.save();
+        }
+
+        course.videos = videoIds;
+    }
+
+    await course.save();
+
+    return res.status(200).json({
+        success: true,
+        status: "success",
+        data: {
+            course,
+        },
+    });
+};

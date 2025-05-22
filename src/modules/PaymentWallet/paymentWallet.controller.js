@@ -270,8 +270,7 @@ export const deletePaymentWallet = async (req, res, next) => {
 //& ==================== get paymentWallet by userId =========================
 export const getPaymentWalletForUser = async (req, res, next) => {
     const { _id } = req.authUser;
-    const paymentWallets = await PaymentWallet.find({userId:_id,status:"pending"});
-    console.log("id", paymentWallets);
+    const paymentWallets = await PaymentWallet.find({userId:_id,status:"pending",type:"session"});
 
     if (!paymentWallets) {
         return next({

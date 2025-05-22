@@ -8,6 +8,7 @@ import videoRouter from './Video/video.routes.js';
 import testRouter from './Test/test.routes.js';
 import productRouter from './Product/product.routes.js';
 import cartRouter from './Cart/cart.routes.js';
+import orderRouter from './Order/order.routes.js';
 export {
     authRouter,
     therapistRouter,
@@ -18,5 +19,6 @@ export {
     videoRouter,
     testRouter,
     productRouter,
-    cartRouter
+    cartRouter,
+    orderRouter
 }

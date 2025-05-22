@@ -13,8 +13,7 @@ const paymentWalletSchema = new Schema({
     },
     therapistId: {
         type: Schema.Types.ObjectId,
-        ref: "Therapist",
-        required: true,
+        ref: "Therapist"
     },
     account:{
         type: String,
@@ -40,7 +39,7 @@ const paymentWalletSchema = new Schema({
     },
     type: {
         type: String,
-        enum: ["session", "course"],
+        enum: ["session", "course", "product"],
         default: "session",
     },
     courseId: {

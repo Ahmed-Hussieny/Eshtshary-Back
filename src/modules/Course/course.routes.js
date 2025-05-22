@@ -61,4 +61,29 @@ courseRouter.get(
     userAuth([systemRoles.USER]),
     expressasyncHandler(courseController.generateCertificate)
 );
+
+
+// Get courses by a therapist
+courseRouter.get(
+    "/get-therapist-courses",
+    userAuth([systemRoles.THERAPIST]),
+    expressasyncHandler(courseController.getTherapistCourses)
+);
+
+courseRouter.get(
+    "/get-therapist-course-details/:courseId",
+    userAuth([systemRoles.THERAPIST]),
+    expressasyncHandler(courseController.getTherapistCourseDetails)
+);
+
+courseRouter.put(
+    "/edit-course-by-therapist/:courseId",
+    userAuth([systemRoles.THERAPIST]),
+    multerMiddlewareLocal({
+        destinationFolder: "Courses",
+        extensions: allowedExtensions.image,
+        fields: [{ name: "thumbnail", maxCount: 1 }],
+    }),
+    expressasyncHandler(courseController.updateCourseByTherapist)
+);
 export default courseRouter;
