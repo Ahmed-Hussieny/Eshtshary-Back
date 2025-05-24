@@ -47,7 +47,7 @@ export const createSession = async (req, res, next) => {
     });
   }
 
-  const sessions = await createSessions(therapist, userId, requestedSlots);
+  const sessions = await createSessions(therapist, userId, requestedSlots, currency);
   if (!sessions || sessions.length === 0) {
     return next({ message: "No sessions created", cause: 400 });
   }
@@ -170,10 +170,11 @@ export const getUserSessions = async (req, res, next) => {
 
 //& ================== GET THERAPIST SESSIONS ==================
 export const getTherapistSessions = async (req, res, next) => {
-  const { _id: therapistId } = req.authUser;
-
-  const sessions = await Session.find({ therapistId })
-    .populate("userId", "name email")
+  const { _id: therapistId } = req.authTherapist;
+  console.log(therapistId);
+  const sessions = await Session.find({ therapistId , 
+    status: { $in: ["scheduled", "completed"] } })
+    .populate("userId", "username email")
     .sort({ date: -1 });
 
   if (!sessions || sessions.length === 0) {
@@ -249,5 +250,55 @@ export const deleteSession = async (req, res, next) => {
   return res.status(200).json({
     message: "Session deleted successfully",
     session,
+  });
+};
+
+//& ================== MARK SESSION AS COMPLETED ==================
+export const markSessionAsCompleted = async (req, res, next) => {
+  const { sessionId } = req.params;
+  const { _id: therapistId } = req.authTherapist;
+  const { notes } = req.body;
+
+  if (!sessionId) {
+    return next({ message: "Session ID is required", cause: 400 });
+  }
+
+  const session = await Session.findById(
+    sessionId
+  );
+  if (!session) {
+    return next({ message: "Session not found", cause: 404 });
+  }
+  console.log("Session found:", session);
+  // check if session data is today or past
+  const currentDate = new Date();
+  const sessionDate = new Date(session.date);
+  
+  if (sessionDate > currentDate) {
+    console.log("Session date is in the future");
+    return next({ message: "هذا التاريخ في المستقبل", cause: 400 });
+  }
+  session.status = "completed";
+  session.notes = notes;
+  await session.save();
+  const therapist = await Therapist.findById(therapistId);
+  if (!therapist) {
+    return next({ message: "Therapist not found", cause: 404 });
+  }
+  therapist.numberOfSessions += 1;
+  if(session.currency === "EGP") {
+    therapist.walletEgp += session.amount;
+  } else if(session.currency === "USD") {
+    therapist.walletUsd += session.amount;
+  }
+  await therapist.save();
+
+
+  // send mail to user to make rate
+
+  return res.status(200).json({
+    success: true,
+    message: "تم انهاء الجلسة بنجاح",
+    sessionId: session._id,
   });
 };

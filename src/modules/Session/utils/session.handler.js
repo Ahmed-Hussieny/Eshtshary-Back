@@ -40,7 +40,7 @@ export const isRequestedSlotsAvailable = async (therapist, requestedSlots) => {
     return {status: true,message: "therapist is available"}
 }
 
-export const createSessions = async (therapist, userId, requestedSlots) => {
+export const createSessions = async (therapist, userId, requestedSlots, currency) => {
     const sessions = [];
     for (const requestedSlot of requestedSlots) {
         const slotDate = new Date(requestedSlot.date);
@@ -49,13 +49,37 @@ export const createSessions = async (therapist, userId, requestedSlots) => {
         const therapistSlot = dayAvailability.slots.find(slot => 
           slot._id.toString() === requestedSlot.slotId
         );
-
+        let amount = 0;
+        if (currency === "EGP") {
+            if(therapistSlot.duration === 30) {
+                amount = therapist.prices.eg30;
+            }
+            else if(therapistSlot.duration === 60) {
+                amount = therapist.prices.eg60;
+            }
+            else if(therapistSlot.duration === 90) {
+                amount = therapist.prices.eg90;
+            }
+            
+        } else if (currency === "USD") {
+            if(therapistSlot.duration === 30) {
+                amount = therapist.prices.usd30;
+            }
+            else if(therapistSlot.duration === 60) {
+                amount = therapist.prices.usd60;
+            }
+            else if(therapistSlot.duration === 90) {
+                amount = therapist.prices.usd90;
+            }
+        }
         // Create a new session
         const newSession = await Session.create({
             therapistId: therapist._id,
             userId,
             slotId: therapistSlot._id,
             date: slotDate,
+            amount,
+            currency,
             startTime: therapistSlot.from,
             endTime: therapistSlot.to,
             duration: therapistSlot.duration,

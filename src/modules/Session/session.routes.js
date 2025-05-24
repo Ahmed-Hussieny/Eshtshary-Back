@@ -21,5 +21,18 @@ sessionRouter.post(
   "/createZoomMeeting/:sessionId",
   // userAuth([systemRoles.USER]),
   expressasyncHandler(sessionController.createZoomMeeting)
-)
+);
+
+
+sessionRouter.get(
+  "/getTherapistSessions",
+  userAuth([systemRoles.THERAPIST]),
+  expressasyncHandler(sessionController.getTherapistSessions)
+);
+
+sessionRouter.put(
+  "/markSessionAsCompleted/:sessionId",
+  userAuth([systemRoles.THERAPIST]),
+  expressasyncHandler(sessionController.markSessionAsCompleted)
+);
 export default sessionRouter;

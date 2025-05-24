@@ -1,6 +1,6 @@
-import ClientUser from "../../DB/Models/clientUser.model.js";
-import User from "../../DB/Models/user.model.js";
+
 import jwt from "jsonwebtoken";
+import Auth from '../../DB/Models/auth.model.js';
 export const auth = (accessRoles) => {
   return async (req, res, next) => {
     const { accesstoken } = req.headers;
@@ -20,10 +20,9 @@ export const auth = (accessRoles) => {
         return next({ message: "Invalid access token", cause: 401 });
 
       //* check if the user is found in the database
-      const user = await User.findById(decodedData.id, "-password");
-      const clientUser = await ClientUser.findById(decodedData.id, "-password");
-      if (!clientUser && !user) return next({ message: "User is not found", cause: 404 });
-      req.authUser = clientUser || user;
+      const user = await Auth.findById(decodedData.id, "-password");
+      if (!user) return next({ message: "User is not found", cause: 404 });
+      req.authUser = user;
 
       //* check if the user has the required role
       if (!accessRoles.includes(req.authUser.role))

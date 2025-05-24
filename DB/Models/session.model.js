@@ -34,6 +34,15 @@ const sessionSchema = new Schema(
       type: Number,
       required: true,
     },
+    amount: {
+      type: Number,
+      required: true,
+    },
+    currency: {
+      type: String,
+      enum: ["EGP", "USD"],
+      required: true,
+    },
     status: {
       type: String,
       enum: ["scheduled", "completed", "canceled", "no-show","pending", "rejected"],

@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 //& ===================== CREATE TEST =====================
 export const createTest = async (req, res, next) => {
-    const { title, description, time, type, questions, totalPoints } = req.body;
+    const { title, description, time, type, questions, totalPoints, results } = req.body;
     //& check if the image is exists
     if(!req.files.image[0].path) {
         return next({ message: "Image is required", status: 400 });
@@ -28,6 +28,19 @@ export const createTest = async (req, res, next) => {
         return next({ message: "Questions must be an array", status: 400 });
     }
 
+    console.log("parsedQuestions", results);
+    // handle results
+    let parsedResults;
+    try {
+        parsedResults = typeof results === 'string' ? JSON.parse(results) : results;
+    } catch (error) {
+        return next({ message: "Invalid results format", status: 400 });
+    }
+
+    // Validate that parsedResults is an array
+    if (!Array.isArray(parsedResults)) {
+        return next({ message: "Results must be an array", status: 400 });
+    }
     //& create the test
     const test = await Test.create({
         title,
@@ -35,6 +48,11 @@ export const createTest = async (req, res, next) => {
         image: imageUrl,
         time,
         type,
+        results: parsedResults.map(result => ({
+            from: Number(result.from),
+            to: Number(result.to),
+            description: result.description
+        })),
         questions: parsedQuestions.map(question => ({
             question: question.question,
             options: question.options.map(option => ({
@@ -94,18 +112,24 @@ export const answerTest = async (req, res, next) => {
             }
         }
     }
+    // get the result based on the userPoints
+    let result = test.results.find(result => userPoints >= result.from && userPoints <= result.to);
+    if(!result) {
+        result = test.results.find(result => userPoints >= result.from);
+    }
     return res.status(200).json({
         success: true,
         message: "Test answered successfully",
         userPoints,
-        totalPoints
+        totalPoints,
+        result: result.description
     });
 }
 
 //& ===================== UPDATE TEST =====================
 export const updateTest = async (req, res, next) => {
     const { id } = req.params;
-    const { title, description, time, type, questions, totalPoints } = req.body;
+    const { title, description, time, type, questions, totalPoints, results } = req.body;
     const test = await Test.findById(id);
     if(!test) {
         return next({ message: "Test not found", status: 404 });
@@ -151,6 +175,24 @@ export const updateTest = async (req, res, next) => {
         }))
     })) || test.questions;
     test.totalPoints = totalPoints || test.totalPoints;
+
+    // handle results
+    let parsedResults;
+    try {
+        parsedResults = typeof results === 'string' ? JSON.parse(results) : results;
+    } catch (error) {
+        return next({ message: "Invalid results format", status: 400 });
+    }
+    // Validate that parsedResults is an array
+    if (!Array.isArray(parsedResults)) {
+        return next({ message: "Results must be an array", status: 400 });
+    }
+    test.results = parsedResults.map(result => ({
+        from: Number(result.from),
+        to: Number(result.to),
+        description: result.description
+    })) || test.results;
+    //& save the test
     const updatedTest = await test.save();
     if(!updatedTest) {
         return next({ message: "Test not updated", status: 400 });

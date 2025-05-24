@@ -298,10 +298,29 @@ export const updateTherapistImage = async (req, res, next) => {
   });
 };
 
+//& ====================== getAllTherapists For Admin ======================
+export const getAllTherapistsForAdmin = async (req, res, next) => {
+  const Therapists = await Therapist.find().select("-password -__v");
+    if (!Therapists) {
+      return next({
+        cause: 404,
+        message: "لا يوجد مستخدمين",
+      });
+    }
+    return res.status(200).json({
+      status: "success",
+      success: true,
+      message: "تم استرجاع جميع المستخدمين بنجاح",
+      data: {
+        Therapists,
+      },
+    });
+};
 //& ====================== GET ALL TherapistS ======================
 export const getAllTherapists = async (req, res, next) => {
     const Therapists = await Therapist.find({
-        isVerified: true
+        isVerified: true,
+        prices: { $ne: null },
     }).select("-password -__v");
     if (!Therapists) {
       return next({
@@ -309,6 +328,7 @@ export const getAllTherapists = async (req, res, next) => {
         message: "لا يوجد مستخدمين",
       });
     }
+
     return res.status(200).json({
       status: "success",
       success: true,
@@ -562,6 +582,19 @@ export const signIn = async (req, res, next) => {
   });
 };
 
+//& ====================== verifyResetToken ======================
+export const verifyResetToken = async (req, res, next) => {
+    // 1- get the reset code from the request body
+    const { token } = req.query;
+
+    // 2- Find the user by email
+    const user = await Therapist.findOne({
+        resetPasswordToken: token,
+        resetPasswordTokenExpires: { $gt: Date.now() }, // Check expiry
+      });
+    if (!user) return next({ message: " لقد انتهت مدة التغيير يمكنك ارسال رمز التغيير مرة اخرى", cause: 404 });
+    return res.status(200).json({success: true, message: "Token is valid"});
+};
 //& ====================== FORGOT PASSWORD ======================
 export const forgotPassword = async (req, res, next) => {
   const { email } = req.body;
@@ -589,7 +622,7 @@ export const forgotPassword = async (req, res, next) => {
     subject: "Reset Password",
     message: verificationEmailTemplate(
       existingTherapist.username,
-      `${process.env.CLIENT_URL}/resetPassword/${resetPasswordToken}`
+      `${process.env.THERAPIST_URL}/resetPassword/${resetPasswordToken}`
     ),
   });
   if (!isEmailSent) return next({ message: "Email is not sent", cause: 500 });
@@ -605,6 +638,7 @@ export const forgotPassword = async (req, res, next) => {
 export const resetPassword = async (req, res, next) => {
   const { token } = req.params;
   const { password } = req.body;
+  console.log("token", token);
   // Verify the token
   const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
   if (!decodedToken) {

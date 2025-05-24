@@ -63,6 +63,22 @@ const therapistSchema = new Schema({
             required: true,
         },
     },
+    rate:{
+        type: Number,
+        default: 0,
+    },
+    numberOfSessions: {
+        type: Number,
+        default: 0,
+    },
+    walletEgp:{
+        type: Number,
+        default: 0,
+    },
+    walletUsd:{
+        type: Number,
+        default: 0,
+    },
     category: {
         type: String,
         required: true,

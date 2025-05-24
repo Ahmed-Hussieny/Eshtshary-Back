@@ -13,6 +13,11 @@ const testSchema = new Schema({
             points: { type: Number, required: true }
         }]
     }],
+    results: [{
+        from: { type: Number, required: true },
+        to: { type: Number, required: true },
+        description: { type: String, required: true },
+    }],
     totalPoints: { type: Number, required: true },
 },{
     timestamps: true

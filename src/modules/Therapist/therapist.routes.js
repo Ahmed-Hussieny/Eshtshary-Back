@@ -1,6 +1,6 @@
 import { Router } from "express";
 import * as therapistController from "./therapist.controller.js";
-import expressasyncHandler from "express-async-handler";
+import expressAsyncHandler from "express-async-handler";
 import { allowedExtensions } from '../../utils/allowedExtensions.js';
 import { multerMiddlewareLocal } from '../../middlewares/multer.js';
 import { userAuth } from "../../middlewares/userAuth.middleware.js";
@@ -10,32 +10,38 @@ therapistRouter.post("/signup", multerMiddlewareLocal({
     destinationFolder: "Therapists",
     extensions: allowedExtensions.document,
     fields: [{ name: "cv", maxCount: 1 },  {name: "professionalCertificates", maxCount: 5}],
-  }), expressasyncHandler(therapistController.signUp));
+  }), expressAsyncHandler(therapistController.signUp));
 
-therapistRouter.post("/acceptTherapist/:id", expressasyncHandler(therapistController.acceptTherapist));
+therapistRouter.post("/acceptTherapist/:id", expressAsyncHandler(therapistController.acceptTherapist));
 therapistRouter.put("/addAppointments/:id",
   userAuth([systemRoles.THERAPIST])
-  ,expressasyncHandler(therapistController.addAppointments));
+  ,expressAsyncHandler(therapistController.addAppointments));
 
 therapistRouter.put("/updateTherapistImage/:id",
   multerMiddlewareLocal({
     destinationFolder: "Therapists",
     extensions: allowedExtensions.image,
     fields: [{ name: "profilePicture", maxCount: 1 }],
-  }), expressasyncHandler(therapistController.updateTherapistImage));
+  }), expressAsyncHandler(therapistController.updateTherapistImage));
 
-therapistRouter.post("/signin", expressasyncHandler(therapistController.signIn));
-therapistRouter.post("/verifyEmail/:token", expressasyncHandler(therapistController.verifyEmail));
-therapistRouter.post('/forgotPassword', expressasyncHandler(therapistController.forgotPassword));
-therapistRouter.put('/resetPassword/:token', expressasyncHandler(therapistController.resetPassword));
-therapistRouter.get('/getAllTherapists', expressasyncHandler(therapistController.getAllTherapists));
-therapistRouter.get('/getTherapist/:id', expressasyncHandler(therapistController.getTherapistById));
+therapistRouter.post("/signin", expressAsyncHandler(therapistController.signIn));
+therapistRouter.post("/verifyEmail/:token", expressAsyncHandler(therapistController.verifyEmail));
+therapistRouter.post('/forgotPassword', expressAsyncHandler(therapistController.forgotPassword));
+therapistRouter.put('/resetPassword/:token', expressAsyncHandler(therapistController.resetPassword));
+therapistRouter.get('/getAllTherapists', expressAsyncHandler(therapistController.getAllTherapists));
+therapistRouter.get('/getTherapist/:id', expressAsyncHandler(therapistController.getTherapistById));
 therapistRouter.get('/getLoggedInTherapist',
   userAuth([systemRoles.THERAPIST])
-  , expressasyncHandler(therapistController.getLoggedInTherapist));
+  , expressAsyncHandler(therapistController.getLoggedInTherapist));
 therapistRouter.put('/updateTherapist',
   userAuth([systemRoles.THERAPIST])
-, expressasyncHandler(therapistController.updateTherapist));
-therapistRouter.delete('/deleteTherapist/:id', expressasyncHandler(therapistController.deleteTherapist));
-therapistRouter.get('/getAvailableSlots/:id/:date', expressasyncHandler(therapistController.getAvailableSlots));
+, expressAsyncHandler(therapistController.updateTherapist));
+therapistRouter.delete('/deleteTherapist/:id', expressAsyncHandler(therapistController.deleteTherapist));
+therapistRouter.get('/getAvailableSlots/:id/:date', expressAsyncHandler(therapistController.getAvailableSlots));
+therapistRouter.get('/getAllTherapistsForAdmin', expressAsyncHandler(therapistController.getAllTherapistsForAdmin));
+
+therapistRouter.post(
+    "/verifyResetToken",
+    expressAsyncHandler(therapistController.verifyResetToken)
+);
 export default therapistRouter;

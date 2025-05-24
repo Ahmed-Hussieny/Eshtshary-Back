@@ -109,3 +109,32 @@ export const createOrder = async (req, res, next) => {
     return res.status(201).json({success:true, message: "Order created successfully" });
 
 };
+
+//& ==================== GET ALL ORDERS ====================
+export const getAllOrders = async (req, res, next) => {
+    const orders = await Order.find().populate("orderItems.productId");
+    if (!orders) {
+        return next({ message: "No orders found", status: 404 });
+    }
+    return res.status(200).json({success:true, orders: orders });
+};
+
+//& ==================== Change Order Status ====================
+export const changeOrderStatus = async (req, res, next) => {
+    const { orderId } = req.params;
+    const { status } = req.body;
+    const order = await Order.findById(orderId);
+    if (!order) {
+        return next({ message: "Order not found", status: 404 });
+    }
+    if (status === "Delivered") {
+        order.isDelivered = true;
+        order.deliveredAt = new Date();
+    } else if (status === "Cancelled") {
+        order.isCancelled = true;
+        order.cancelledAt = new Date();
+    }
+    order.orderStatus = status;
+    await order.save();
+    return res.status(200).json({success:true, message: "Order status updated successfully", order });
+}
