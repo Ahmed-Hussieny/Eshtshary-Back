@@ -156,7 +156,7 @@ export const forgotPassword = async (req, res, next) => {
     const isEmailSent = await sendEmailService({
         to: email,
         subject: 'Reset Password',
-        message: verificationEmailTemplate(existingUser.username,`${process.env.CLIENT_URL}/resetPassword/${resetPasswordToken}`)
+        message: verificationEmailTemplate(existingUser.username,`${process.env.ADMIN_URL}/resetPassword/${resetPasswordToken}`)
     });
     if(!isEmailSent) return next({message: 'Email is not sent', cause: 500});
     // Send a response
@@ -167,6 +167,19 @@ export const forgotPassword = async (req, res, next) => {
     });
 }
 
+//& ====================== VERIFY RESET TOKEN ======================
+export const verifyResetToken = async (req, res, next) => {
+    // 1- get the reset code from the request body
+    const { token } = req.query;
+
+    // 2- Find the user by email
+    const user = await Auth.findOne({
+        resetPasswordToken: token,
+        resetPasswordTokenExpires: { $gt: Date.now() }, // Check expiry
+      });
+    if (!user) return next({ message: " لقد انتهت مدة التغيير يمكنك ارسال رمز التغيير مرة اخرى", cause: 404 });
+    return res.status(200).json({success: true, message: "Token is valid"});
+};
 
 //& ====================== RESET PASSWORD ======================
 export const resetPassword = async (req, res, next) => {

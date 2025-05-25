@@ -343,7 +343,6 @@ export const getAllTherapists = async (req, res, next) => {
 export const getTherapistById = async (req, res, next) => {
     const { id } = req.params;
     const therapist = await Therapist.findById(id).select("-password -__v");
-  
     if (!therapist) {
       return next({
         cause: 404,

@@ -166,7 +166,19 @@ export const forgotPassword = async (req, res, next) => {
         message: "تم إرسال بريد إعادة تعيين كلمة المرور بنجاح",
     });
 }
+//& ====================== verifyResetToken ======================
+export const verifyResetToken = async (req, res, next) => {
+    // 1- get the reset code from the request body
+    const { token } = req.query;
 
+    // 2- Find the user by email
+    const user = await User.findOne({
+        resetPasswordToken: token,
+        resetPasswordTokenExpires: { $gt: Date.now() }, // Check expiry
+      });
+    if (!user) return next({ message: " لقد انتهت مدة التغيير يمكنك ارسال رمز التغيير مرة اخرى", cause: 404 });
+    return res.status(200).json({success: true, message: "Token is valid"});
+};
 
 //& ====================== RESET PASSWORD ======================
 export const resetPassword = async (req, res, next) => {

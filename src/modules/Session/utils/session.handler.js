@@ -40,7 +40,7 @@ export const isRequestedSlotsAvailable = async (therapist, requestedSlots) => {
     return {status: true,message: "therapist is available"}
 }
 
-export const createSessions = async (therapist, userId, requestedSlots, currency) => {
+export const createSessions = async (therapist, userId, requestedSlots, currency, statusScheduled) => {
     const sessions = [];
     for (const requestedSlot of requestedSlots) {
         const slotDate = new Date(requestedSlot.date);
@@ -83,7 +83,7 @@ export const createSessions = async (therapist, userId, requestedSlots, currency
             startTime: therapistSlot.from,
             endTime: therapistSlot.to,
             duration: therapistSlot.duration,
-            status: "pending",
+            status: statusScheduled?"scheduled":"pending",
             notes: "",
             meetingLink: "",
         });
@@ -112,6 +112,18 @@ export const handelCreatePaymentWallet = async (paymentObject) => {
             currency : paymentObject.currency,
             type: "session",
             transactionImage: paymentObject.transactionImageUrl, 
+        });
+    } else if (paymentObject.paymentMethod === "card") {
+        paymentWallet = await PaymentWallet.create({
+            sessionId: paymentObject.sessions.map(session => session._id),
+            userId : paymentObject.userId,
+            therapistId: paymentObject.therapistId,
+            account: "card",
+            amount: paymentObject.amount,
+            currency : paymentObject.currency,
+            paymentMethod: paymentObject.paymentMethod,
+            status: paymentObject.statusCompleted ? "completed" : "pending",
+            type: "session",
         });
     }
     return paymentWallet;

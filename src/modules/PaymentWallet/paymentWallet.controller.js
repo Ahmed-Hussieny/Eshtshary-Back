@@ -127,12 +127,23 @@ export const approvePaymentWallet = async (req, res, next) => {
                 message: isMailsSent.message,
             });
         }
+        const therapist = await Therapist.findById(paymentWallet.therapistId._id);
+        if (!therapist) {
+            return next({
+                cause: 400,
+                message: "فشل استرجاع المعالج",
+            });
+        }
+        if(paymentWallet.currency === "EGP") {
+            therapist.walletEgp += paymentWallet.amount * Number(process.env.THERAPIST_RATE_COURSE);
+        } else if(paymentWallet.currency === "USD") {
+            therapist.walletUsd += paymentWallet.amount * Number(process.env.THERAPIST_RATE_COURSE);
+        }
+        await therapist.save();
     }
 
     paymentWallet.status = "completed";
     await paymentWallet.save();
-
-
     
     return res.status(200).json({
         success: true,

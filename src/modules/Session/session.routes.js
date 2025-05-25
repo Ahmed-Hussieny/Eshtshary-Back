@@ -18,12 +18,15 @@ sessionRouter.post(
 );
 
 sessionRouter.post(
-  "/createZoomMeeting/:sessionId",
-  // userAuth([systemRoles.USER]),
-  expressasyncHandler(sessionController.createZoomMeeting)
+  "/createSessionWithCard",
+  userAuth([systemRoles.USER]),
+  multerMiddlewareLocal({
+      destinationFolder: "PaymentWallets",
+      extensions: allowedExtensions.image,
+      fields: [{ name: "transactionImage", maxCount: 1 }],
+  }),
+  expressasyncHandler(sessionController.createSessionWithCard)
 );
-
-
 sessionRouter.get(
   "/getTherapistSessions",
   userAuth([systemRoles.THERAPIST]),
@@ -35,4 +38,11 @@ sessionRouter.put(
   userAuth([systemRoles.THERAPIST]),
   expressasyncHandler(sessionController.markSessionAsCompleted)
 );
+
+
+sessionRouter.post(
+  "/webhook",
+  sessionController.webhookHandler
+)
+
 export default sessionRouter;

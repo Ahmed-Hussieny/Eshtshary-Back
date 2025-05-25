@@ -29,7 +29,7 @@ const paymentWalletSchema = new Schema({
     },
     paymentMethod:{
         type: String,
-        enum: ["vodafoneCash", "instaPay"],
+        enum: ["vodafoneCash", "instaPay", "card"],
         default: "vodafoneCash",
     },
     status: {

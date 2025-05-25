@@ -1,14 +1,18 @@
 import { Router } from "express";
 import * as authController from "./auth.controller.js";
-import expressasyncHandler from "express-async-handler";
+import expressAsyncHandler from "express-async-handler";
 const authRouter = Router();
-authRouter.post("/signup", expressasyncHandler(authController.signUp));
-authRouter.post("/signin", expressasyncHandler(authController.signIn));
-authRouter.post("/verifyEmail/:token", expressasyncHandler(authController.verifyEmail));
-authRouter.post('/forgotPassword', expressasyncHandler(authController.forgotPassword));
-authRouter.put('/resetPassword/:token', expressasyncHandler(authController.resetPassword));
-authRouter.get('/getAllUsers', expressasyncHandler(authController.getAllUsers));
-authRouter.get('/getUser/:id', expressasyncHandler(authController.getUserById));
-authRouter.put('/updateUser/:id', expressasyncHandler(authController.updateUser));
-authRouter.delete('/deleteUser/:id', expressasyncHandler(authController.deleteUser));
+authRouter.post("/signup", expressAsyncHandler(authController.signUp));
+authRouter.post("/signin", expressAsyncHandler(authController.signIn));
+authRouter.put("/verifyEmail/:token", expressAsyncHandler(authController.verifyEmail));
+authRouter.post('/forgotPassword', expressAsyncHandler(authController.forgotPassword));
+authRouter.post(
+    "/verifyResetToken",
+    expressAsyncHandler(authController.verifyResetToken)
+);
+authRouter.put('/resetPassword/:token', expressAsyncHandler(authController.resetPassword));
+authRouter.get('/getAllUsers', expressAsyncHandler(authController.getAllUsers));
+authRouter.get('/getUser/:id', expressAsyncHandler(authController.getUserById));
+authRouter.put('/updateUser/:id', expressAsyncHandler(authController.updateUser));
+authRouter.delete('/deleteUser/:id', expressAsyncHandler(authController.deleteUser));
 export default authRouter;

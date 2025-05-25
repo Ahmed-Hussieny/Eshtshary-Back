@@ -1,12 +1,13 @@
 import Cart from "../../../DB/Models/cart.model.js";
 import Order from "../../../DB/Models/order.model.js";
 import PaymentWallet from "../../../DB/Models/paymentWallet.model.js";
+import { createCharge } from "../../services/tapPayment.js";
 
 //& ==================== CREATE ORDER ====================
 export const createOrder = async (req, res, next) => {
     const { _id:userId } = req.authUser;
     const { paymentMethod, shippingAddress, transferAccount, transferNumber} = req.body;
-    console.log(req.body);
+
     const shippingData = JSON.parse(shippingAddress);
     const userCart = await Cart.findOne({ userId }).populate("products.productId");
     if (!userCart) {
@@ -79,34 +80,96 @@ export const createOrder = async (req, res, next) => {
         return res.status(201).json({success:true, message: "Order created successfully" });
     }
     
-    // const orderItems = userCart.cartItems.map(item => ({
-    //     title: item.productId.title,
-    //     quantity: item.quantity,
-    //     price: item.productId.price,
-    //     productId: item.productId._id
-    // }));
-    // const shippingPrice = 0;
-    // const totalPrice = userCart.cartItems.reduce((acc, item) => acc + (item.productId.price * item.quantity), 0) + shippingPrice;
-    // const order = await Order.create({
-    //     userId,
-    //     orderItems,
-    //     shippingAddress: {
-    //         address,
-    //         city,
-    //         postalCode,
-    //         country
-    //     },
-    //     phoneNumber,
-    //     shippingPrice,
-    //     totalPrice,
-    //     paymentMethod
-    // });
-    // await order.save();
-    
-    // // Clear the cart after creating the order
-    // await Cart.findOneAndUpdate({ userId }, { $set: { cartItems: [] } });
-    
     return res.status(201).json({success:true, message: "Order created successfully" });
+};
+
+//& ==================== CREATE ORDER USING CARD =============
+export const createOrderWithCard = async (req, res, next) => {
+    const { shippingAddress} = req.body;
+    const { _id:userId } = req.authUser;
+    const shippingData = JSON.parse(shippingAddress);
+    const userCart = await Cart.findOne({ userId }).populate("products.productId").populate("userId");
+    if (!userCart) {
+        return next({ message: "Cart not found", status: 404 });
+    }
+      const chargeUrl = await createCharge({
+        price: +userCart.totalAmount,
+        title: `Order from ${userCart.userId.username}`,
+        id: userCart._id.toString(),
+        username: userCart.userId.username,
+        email: userCart.userId.email,
+        currency: userCart.currency || "EGP",
+        metadata: {
+            userId: userId.toString(),
+            cartId:userCart._id.toString(),
+            currency: userCart.currency || "EGP",
+            shippingAddress,
+            amount:+userCart.totalAmount,
+        },
+        redirect: {
+            url: `${process.env.CLIENT_URL}/profile`,
+        },
+        post: {
+            url: `${process.env.SERVER_URL}/api/v1/order/webhook`,
+        },
+        });
+
+        if (!chargeUrl) {
+        return next({ message: "Failed to create charge", cause: 400 });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Order created successfully",
+            chargeUrl
+        });
+};
+
+//& ==================== WEBHOOK FOR ORDER PAYMENT ====================
+export const webhookHandler = async (req, res, next) => {
+    const { metadata, status, id } = req.body;
+    if (status === "CAPTURED") {
+        const { userId, cartId, shippingAddress, amount, currency } = metadata;
+        const userCart = await Cart.findById(cartId).populate("products.productId").populate("userId");
+        if (!userCart) {
+            return next({ message: "Cart not found", status: 404 });
+        }
+        const orderItems = userCart.products.map(item => ({
+            title: item.title,
+            quantity: item.quantity,
+            price: item.originalPrice,
+            productId: item.productId._id
+        }));
+        let totalPrice = 0;
+        if (currency === "EGP") {
+            totalPrice = userCart.products.reduce((acc, item) => acc + (item.productId.priceEg * item.quantity), 0);
+        } else if (currency === "USD") {
+            totalPrice = userCart.products.reduce((acc, item) => acc + (item.productId.priceUsd * item.quantity), 0);
+        }
+        
+        const order = await Order.create({
+            userId,
+            orderItems,
+            shippingAddress: JSON.parse(shippingAddress),
+            phoneNumber: JSON.parse(shippingAddress).phoneNumber,
+            shippingPrice : 0,
+            totalPrice,
+            paymentMethod: "card",
+            transactionId: id,
+            isPaid: true,
+            paidAt: new Date().toISOString(),
+            orderStatus: "Paid"
+        });
+        
+        // Clear the cart after creating the order
+        userCart.products = [];
+        userCart.totalAmount = 0;
+        await userCart.save();
+        
+        return res.status(200).json({success:true, message: "Order created successfully" });
+    }
+    return res.status(400).json({success:false, message: "Payment not captured" });
+        
 
 };
 

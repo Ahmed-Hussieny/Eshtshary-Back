@@ -6,6 +6,10 @@ import PaymentWallet from "../../../DB/Models/paymentWallet.model.js";
 import sendEmailService from "../../services/send-email.services.js";
 import { HandleGenerateCertificate } from "./utils/generateCertificate.js";
 import User from "../../../DB/Models/user.model.js";
+import { createCharge } from "../../services/tapPayment.js";
+import Therapist from "../../../DB/Models/therapist.model.js";
+import { handelCreatePaymentWallet } from "../Session/utils/session.handler.js";
+import axios from "axios";
 
 //& ===================== ADD COURSE =====================
 export const createCourse = async (req, res, next) => {
@@ -138,6 +142,181 @@ export const enrollInCourse = async (req, res, next) => {
         status: "success",
         message: "تم انشاء الدفعة بنجاح بمجرد تاكيد الدفع سيتم ارسال اشعار بالبريد الالكتروني"
     });
+};
+
+//& ===================== ENROLL COURSE BY CARD =====================
+export const enrollCourseByCard = async (req, res, next) => {
+    const { courseId } = req.params;
+    const { id: userId } = req.authUser;
+    const { amount, currency } = req.body;
+
+    // Check if course exists
+    const course = await Course.findById(courseId).populate("therapistId");
+    if (!course) {
+        return next({ message: "الدورة غير موجودة", status: 404 });
+    }
+    const user = await User.findById(userId);
+      if (!user) {
+        return next({ message: "User not found", cause: 404 });
+      }
+
+    // Check if user is already enrolled
+    const isEnrolled = course.enrolledUsers.includes(userId);
+    if (isEnrolled) {
+        return next({ message: "أنت مسجل بالفعل في هذه الدورة", status: 400 });
+    }
+
+    // Create payment wallet
+    // Create charge using Tap Payment
+      const chargeUrl = await createCharge({
+        price: +amount,
+        title: course.title,
+        id: course.therapistId._id,
+        username: user.username,
+        email: user.email,
+        currency: currency,
+        metadata: {
+          userId,
+          therapistId:course.therapistId._id,
+          courseId: course._id,
+          currency,
+          amount,
+    
+        },
+        redirect: {
+          url: `${process.env.CLIENT_URL}/profile`,
+        },
+        post: {
+          url: `${process.env.SERVER_URL}/api/v1/course/webhook`,
+        },
+      });
+      if (!chargeUrl) {
+        return next({ message: "Failed to create charge", cause: 400 });
+      }
+    return res.status(200).json({
+        success: true,
+        status: "success",
+        message: "تم التسجيل في الدورة بنجاح",
+        chargeUrl
+    });
+};
+
+//& ===================== HANDLE WEBHOOK FOR PAYMENT =====================
+export const webhookHandler = async (req, res, next) => {
+  const { metadata, status, id } = req.body;
+    // console.log("Webhook received:", req.body);
+  if (status === "CAPTURED") {
+    const { userId,
+          therapistId,
+          courseId,
+          currency,
+          amount} = metadata;
+
+    try {
+      // Verify payment status
+      const options = {
+        method: "GET",
+        url: `${process.env.TAP_URL}/charges/${id}`,
+        headers: {
+          accept: "application/json",
+          Authorization:  `Bearer ${process.env.TAP_SECRET_KEY}`,
+        },
+      };
+      const response = await axios.request(options);
+      console.log("Payment verification response:", response.data);
+      if (response.data.status === "CAPTURED") {
+        const course = await Course.findById(courseId);
+        if (!course) {
+            return next({
+                cause: 400,
+                message: "فشل استرجاع الدورة",
+            });
+        }
+        const isUserInCourse = course.enrolledUsers.some(user => user.toString() === userId.toString());   
+        if (isUserInCourse) {
+            return next({
+                message: "انت بالفعل مشترك في هذه الدورة",
+                cause: 400,
+            });
+        }
+        course.enrolledUsers.push(userId);
+        course.enrolledUsersCount++;
+        await course.save();
+        
+        const therapist = await Therapist.findById(therapistId);
+        if (!therapist) {
+            return next({
+                cause: 400,
+                message: "فشل استرجاع المعالج",
+            });
+        }
+        if(currency === "EGP") {
+            therapist.walletEgp += amount * Number(process.env.THERAPIST_RATE_COURSE);
+        } else if(currency === "USD") {
+            therapist.walletUsd += amount * Number(process.env.THERAPIST_RATE_COURSE);
+        }
+        await therapist.save();
+
+        // Handle payment
+        const paymentObject = {
+          userId,
+          therapistId,
+          account: "card",
+          amount: metadata.amount,
+          currency: metadata.currency,
+          paymentMethod: "card",
+          transactionImageUrl: null,
+          type: "course",
+          courseId,
+          status: "completed",
+        };
+
+        const paymentWallet = await PaymentWallet.create(paymentObject);
+        if(!paymentWallet) {
+            console.log("oooooooooooooo")
+            return next({ message: "فشل الدفع", status: 400 });
+        }
+
+        // Send emails
+        const user = await User.findById(userId);
+        if (!user) {
+          return next({ message: "User not found", cause: 404 });
+        }
+        const emailSubject = `تم التسجيل في الدورة`;
+        const emailMessage = `تم التسجيل في الدورة ${course.title} بنجاح`;
+        const isEmailSentClient = await sendEmailService({
+          to: user.email,
+          subject: emailSubject,
+          message: emailMessage
+        });
+        if(!isEmailSentClient) {
+          console.error('Email failed to send, but session was created');
+        }
+        const emailSubjectTherapist = `تم تسجيل مستخدم جديد في الدورة`;
+        const emailMessageTherapist = `تم تسجيل المستخدم ${user.username} في الدورة ${course.title}`;
+        const isEmailSentTherapist = await sendEmailService({
+          to: therapist.email,
+          subject: emailSubjectTherapist,
+          message: emailMessageTherapist
+        });
+        if(!isEmailSentTherapist) {
+          console.error('Email to therapist failed to send, but session was created');
+        }
+        return res.status(200).json({
+          message: "Payment verified, sessions created, and emails sent",
+        });
+      }
+        
+      return res.status(400).json({ message: "Payment not captured" });
+    } catch (error) {
+      return res.status(500).json({ message: "Error processing webhook" });
+    }
+  }
+
+  return res.status(200).json({
+    message: "Webhook received successfully",
+    status
+  });
 };
 
 // & ======================= Enroll course For the user when the payment is approved =======================

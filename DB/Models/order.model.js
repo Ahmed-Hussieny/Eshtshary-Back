@@ -21,7 +21,7 @@ const orderSchema = new Schema({
     },
     shippingPrice: { type: Number, required: true },
     totalPrice: { type: Number, required: true },
-    paymentMethod: { type: String, enum:['Paymob', 'vodafoneCash', 'instaPay'], required: true },
+    paymentMethod: { type: String, enum:['card', 'vodafoneCash', 'instaPay'], required: true },
 
     orderStatus:{type: String, enum:['Pending', 'Paid', 'Delivered', 'Placed', 'Cancelled'], required: true, default:'Pending'},
 

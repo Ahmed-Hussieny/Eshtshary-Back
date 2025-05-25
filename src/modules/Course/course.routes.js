@@ -1,6 +1,6 @@
 import { Router } from "express";
 import * as courseController from "./course.controller.js";
-import expressasyncHandler from 'express-async-handler';
+import expressAsyncHandler from 'express-async-handler';
 import { multerMiddlewareLocal } from "../../middlewares/multer.js";
 import { allowedExtensions } from "../../utils/allowedExtensions.js";
 import { userAuth } from "../../middlewares/userAuth.middleware.js";
@@ -16,7 +16,18 @@ courseRouter.post(
         extensions: allowedExtensions.image,
         fields: [{ name: "thumbnail", maxCount: 1 }],
     }),
-    expressasyncHandler(courseController.createCourse)
+    expressAsyncHandler(courseController.createCourse)
+);
+
+courseRouter.post(
+    "/enrollCourseByCard/:courseId",
+    userAuth([systemRoles.USER]),
+    multerMiddlewareLocal({
+        destinationFolder: "Courses",
+        extensions: allowedExtensions.image,
+        fields: [{ name: "thumbnail", maxCount: 1 }],
+    }),
+    expressAsyncHandler(courseController.enrollCourseByCard)
 );
 
 // New routes for course enrollment
@@ -28,38 +39,38 @@ courseRouter.post(
         extensions: allowedExtensions.image,
         fields: [{ name: "transactionImage", maxCount: 1 }],
     }),
-    expressasyncHandler(courseController.enrollInCourse)
+    expressAsyncHandler(courseController.enrollInCourse)
 );
 
 courseRouter.post(
     "/acceptPayment/:paymentWalletId",
     userAuth([systemRoles.THERAPIST]),
-    expressasyncHandler(courseController.acceptPayment)
+    expressAsyncHandler(courseController.acceptPayment)
 );
 
 courseRouter.get(
     "/getEnrolledCourses",
     userAuth([systemRoles.USER]),
-    expressasyncHandler(courseController.getEnrolledCourses)
+    expressAsyncHandler(courseController.getEnrolledCourses)
 );
 
 // Get detailed information about an enrolled course
 courseRouter.get(
     "/getEnrolledCourseDetails/:courseId",
     userAuth([systemRoles.USER]),
-    expressasyncHandler(courseController.getEnrolledCourseDetails)
+    expressAsyncHandler(courseController.getEnrolledCourseDetails)
 );
 
 courseRouter.get(
     "/getCourses",
     userAuth([systemRoles.USER]),
-    expressasyncHandler(courseController.getCourses)
+    expressAsyncHandler(courseController.getCourses)
 );
 
 courseRouter.get(
     "/generateCertificate/:courseId",
     userAuth([systemRoles.USER]),
-    expressasyncHandler(courseController.generateCertificate)
+    expressAsyncHandler(courseController.generateCertificate)
 );
 
 
@@ -67,13 +78,13 @@ courseRouter.get(
 courseRouter.get(
     "/get-therapist-courses",
     userAuth([systemRoles.THERAPIST]),
-    expressasyncHandler(courseController.getTherapistCourses)
+    expressAsyncHandler(courseController.getTherapistCourses)
 );
 
 courseRouter.get(
     "/get-therapist-course-details/:courseId",
     userAuth([systemRoles.THERAPIST]),
-    expressasyncHandler(courseController.getTherapistCourseDetails)
+    expressAsyncHandler(courseController.getTherapistCourseDetails)
 );
 
 courseRouter.put(
@@ -84,6 +95,11 @@ courseRouter.put(
         extensions: allowedExtensions.image,
         fields: [{ name: "thumbnail", maxCount: 1 }],
     }),
-    expressasyncHandler(courseController.updateCourseByTherapist)
+    expressAsyncHandler(courseController.updateCourseByTherapist)
+);
+
+courseRouter.post(
+    "/webhook",
+    expressAsyncHandler(courseController.webhookHandler)
 );
 export default courseRouter;

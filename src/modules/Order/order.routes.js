@@ -17,6 +17,15 @@ orderRouter.post("/create-order",
         })
     , expressAsyncHandler(orderController.createOrder));
 
+orderRouter.post("/create-order-with-card",
+    userAuth([systemRoles.USER]),
+    multerMiddlewareLocal({
+        destinationFolder: "PaymentWallets",
+        extensions: allowedExtensions.image,
+        fields: [{ name: "transferReceipt", maxCount: 1 }],
+    }),
+    expressAsyncHandler(orderController.createOrderWithCard));
+
 orderRouter.get("/get-all-orders",
     auth([systemRoles.ADMIN]),
     expressAsyncHandler(orderController.getAllOrders));
@@ -24,4 +33,9 @@ orderRouter.get("/get-all-orders",
 orderRouter.put("/change-order-status/:orderId",
     auth([systemRoles.ADMIN]),
     expressAsyncHandler(orderController.changeOrderStatus));
+
+orderRouter.post(
+    "/webhook",
+    expressAsyncHandler(orderController.webhookHandler)
+);
 export default orderRouter;
