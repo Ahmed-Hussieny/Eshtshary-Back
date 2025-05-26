@@ -39,12 +39,17 @@ const paymentWalletSchema = new Schema({
     },
     type: {
         type: String,
-        enum: ["session", "course", "product"],
+        enum: ["session", "course", "product", "liveCourse"],
         default: "session",
     },
     courseId: {
         type: Schema.Types.ObjectId,
         ref: "Course",
+        default: undefined,
+    },
+    liveCourseId: {
+        type: Schema.Types.ObjectId,
+        ref: "LiveCourse",
         default: undefined,
     },
     currency: {

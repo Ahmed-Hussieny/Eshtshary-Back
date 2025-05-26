@@ -9,6 +9,8 @@ import testRouter from './Test/test.routes.js';
 import productRouter from './Product/product.routes.js';
 import cartRouter from './Cart/cart.routes.js';
 import orderRouter from './Order/order.routes.js';
+import articleRouter from './Article/article.routes.js';
+import liveCourseRouter from './LiveCourse/liveCourse.routes.js';
 export {
     authRouter,
     therapistRouter,
@@ -20,5 +22,7 @@ export {
     testRouter,
     productRouter,
     cartRouter,
-    orderRouter
+    orderRouter,
+    articleRouter,
+    liveCourseRouter
 }

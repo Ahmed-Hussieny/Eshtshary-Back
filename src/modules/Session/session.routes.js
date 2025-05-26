@@ -5,6 +5,7 @@ import { userAuth } from "../../middlewares/userAuth.middleware.js";
 import { systemRoles } from "../../utils/system-roles.js";
 import { multerMiddlewareLocal } from "../../middlewares/multer.js";
 import { allowedExtensions } from "../../utils/allowedExtensions.js";
+import { auth } from "../../middlewares/auth.middleware.js";
 const sessionRouter = Router();
 sessionRouter.post(
   "/createSession",
@@ -45,4 +46,31 @@ sessionRouter.post(
   sessionController.webhookHandler
 )
 
+sessionRouter.post(
+  "/rate-session/:sessionId",
+  expressasyncHandler(sessionController.rateSession)
+)
+
+sessionRouter.get(
+  "/getRates",
+  auth([systemRoles.ADMIN]),
+  expressasyncHandler(sessionController.getRates)
+);
+
+sessionRouter.get(
+  "/getShowRates",
+  expressasyncHandler(sessionController.getShowRates)
+);
+
+sessionRouter.put(
+  "/updateRate/:rateId",
+  auth([systemRoles.ADMIN]),
+  expressasyncHandler(sessionController.updateRate)
+);
+
+sessionRouter.delete(
+  "/deleteRate/:rateId",
+  auth([systemRoles.ADMIN]),
+  expressasyncHandler(sessionController.deleteRate)
+);
 export default sessionRouter;

@@ -4,6 +4,8 @@ import Therapist from "../../../DB/Models/therapist.model.js";
 import User from "../../../DB/Models/user.model.js";
 import { createCharge } from "../../services/tapPayment.js";
 import { createSessions, handelCreatePaymentWallet, isRequestedSlotsAvailable, sendEmailToUser } from "./utils/session.handler.js";
+import sendEmailService from "../../services/send-email.services.js";
+import Rate from "../../../DB/Models/rate.mode.js";
 
 //& ================== CREATE SESSION ==================
 export const createSession = async (req, res, next) => {
@@ -379,10 +381,177 @@ export const markSessionAsCompleted = async (req, res, next) => {
   }
   await therapist.save();
   // send mail to user to make rate
+  const user = await User.findById(session.userId);
+  if (!user) {
+    return next({ message: "User not found", cause: 404 });
+  }
+  const emailSubject = "تم انهاء الجلسة بنجاح";
+  const emailMessage = `
+  مرحبا ${user.username} ،
+  نود إبلاغك بأنه تم إنهاء جلستك مع المعالج ${therapist.full_name} بنجاح.
+  يمكنك الآن تقييم الجلسة ومشاركة تجربتك معنا.
+  توفر لك الفرصة لتقديم تقييمك من خلال الرابط التالي:
+  ${process.env.CLIENT_URL}/rate-session/${session._id}
+  إذا كان لديك أي استفسارات أو تحتاج إلى مساعدة إضافية، فلا تتردد في التواصل معنا.
+  نحن هنا لدعمك في رحلتك نحو الصحة النفسية والعافية.
+  نقدر ثقتك بنا ونتطلع إلى مساعدتك في المستقبل.
+  شكرا لك على اختيارنا.
+  `;
+    const isEmailSentClient = await sendEmailService({
+        to: user.email,
+        subject: emailSubject,
+        message: emailMessage
+    });
+    console.log("Email sent to user:", isEmailSentClient);
+    if(!isEmailSentClient) {
+        console.error('Email failed to send, but session was created');
+    }
 
   return res.status(200).json({
     success: true,
     message: "تم انهاء الجلسة بنجاح",
     sessionId: session._id,
+  });
+};
+
+//& ================== RATE SESSION ==================
+export const rateSession = async (req, res, next) => {
+  const { sessionId } = req.params;
+  const { rating, comment } = req.body;
+  if (!sessionId) {
+    return next({ message: "Session ID is required", cause: 400 });
+  }
+
+  const session = await Session.findById(sessionId).populate("userId therapistId");
+  if (!session) {
+    return next({ message: "Session not found", cause: 404 });
+  }
+
+  // check if there is already a rating for this session
+  const existingRating = await Rate.findOne({
+    sessionId: session._id,
+    userId: session.userId._id,
+    sessionId: session._id,
+  }); 
+  if (existingRating) {
+    return next({ message: "You have already rated this session", cause: 400 });
+  }
+  // Validate rating
+  if (rating < 1 || rating > 5) {
+    return next({ message: "Rating must be between 1 and 5", cause: 400 });
+  }
+  // Create new rating
+  const newRating = await Rate.create({
+    userId: session.userId._id,
+    therapistId: session.therapistId._id,
+    sessionId: session._id,
+    rate: rating,
+    comment: comment || "",
+  });
+  if (!newRating) {
+    return next({ message: "Failed to create rating", cause: 500 });
+  }
+  const therapist = await Therapist.findById(session.therapistId._id);
+  if (!therapist) {
+    return next({ message: "Therapist not found", cause: 404 });
+  }
+  const numberOfTherapistRates = await Rate.countDocuments({
+    therapistId: therapist._id,
+  });
+  if (numberOfTherapistRates === 0) {
+    numberOfTherapistRates = 1;
+  }
+  therapist.rate = (
+    (therapist.rate * (numberOfTherapistRates - 1) + rating) /
+    numberOfTherapistRates
+  ).toFixed(2);
+  await therapist.save();
+  
+  return res.status(200).json({
+    success: true,
+    message: "Session rated successfully",
+    session,
+  });
+};
+
+//& ================== GET RATES ==================
+export const getRates = async (req, res, next) => {
+  const rates = await Rate.find()
+    .populate("userId", "username email")
+    .populate("therapistId", "full_name");
+
+  if (!rates || rates.length === 0) {
+    return next({ message: "No rates found for this session", cause: 404 });
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: "Rates retrieved successfully",
+    rates,
+  });
+};
+
+//& ================== GET SHOW RATES ==================
+export const getShowRates = async (req, res, next) => {
+  const rates = await Rate.find({ status: "show" })
+    .populate("userId", "username email")
+    .populate("therapistId", "full_name");
+
+  if (!rates || rates.length === 0) {
+    return next({ message: "No rates found for this session", cause: 404 });
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: "Rates retrieved successfully",
+    rates,
+  });
+};
+
+//& ================== UPDATE RATE ==================
+export const updateRate = async (req, res, next) => {
+  const { rateId } = req.params;
+  const { comment, status } = req.body;
+
+  if (!rateId) {
+    return next({ message: "Rate ID is required", cause: 400 });
+  }
+
+  const rate = await Rate.findById(rateId);
+  if (!rate) {
+    return next({ message: "Rate not found", cause: 404 });
+  }
+
+  rate.comment = comment || rate.comment;
+  rate.status = status || rate.status;
+  if (status && !["no-show", "show"].includes(status)) {
+    return next({ message: "Invalid status", cause: 400 });
+  }
+  
+  await rate.save();
+
+  return res.status(200).json({
+    success: true,
+    message: "Rate updated successfully",
+    rate,
+  });
+};
+//& ================== DELETE RATE ==================
+export const deleteRate = async (req, res, next) => {
+  const { rateId } = req.params;
+
+  if (!rateId) {
+    return next({ message: "Rate ID is required", cause: 400 });
+  }
+
+  const rate = await Rate.findByIdAndDelete(rateId);
+  if (!rate) {
+    return next({ message: "Rate not found", cause: 404 });
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: "Rate deleted successfully",
+    rate,
   });
 };

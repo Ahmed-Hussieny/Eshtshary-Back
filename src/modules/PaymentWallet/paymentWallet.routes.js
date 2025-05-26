@@ -47,4 +47,10 @@ paymentWalletRouter.get(
     userAuth([systemRoles.USER]),
     expressasyncHandler(paymentWalletController.getPaymentWalletByCourseId)
 );
+
+paymentWalletRouter.get(
+    "/getPaymentWalletByLiveCourseId/:courseId",
+    userAuth([systemRoles.USER]),
+    expressasyncHandler(paymentWalletController.getPaymentWalletByLiveCourseId)
+);
 export default paymentWalletRouter;

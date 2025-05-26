@@ -19,7 +19,8 @@ export const initiateApp = ({ app, express }) => {
     app.use('/api/v1/product', routers.productRouter);
     app.use('/api/v1/cart', routers.cartRouter);
     app.use('/api/v1/order', routers.orderRouter);
-    // app.use('/webhook', routers.webhookRouter);
+    app.use('/api/v1/article', routers.articleRouter);
+    app.use('/api/v1/live-course', routers.liveCourseRouter);
     
     app.use('/uploads/Therapists', express.static('uploads/Therapists'));
     app.use('/uploads/PaymentWallets', express.static('uploads/PaymentWallets'));
@@ -27,6 +28,7 @@ export const initiateApp = ({ app, express }) => {
     app.use('/uploads/Tests', express.static('uploads/Tests'));
     app.use('/uploads/Products', express.static('uploads/Products'));
     app.use('/uploads/Certificates', express.static('uploads/Certificates'));
+    app.use('/uploads/Articles', express.static('uploads/Articles'));
 
     app.use((req, res, next) => {
         next({ message: "Route not found", status: 404 });

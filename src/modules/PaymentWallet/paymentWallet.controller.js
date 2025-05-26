@@ -4,6 +4,7 @@ import Therapist from "../../../DB/Models/therapist.model.js";
 import sendEmailService from "../../services/send-email.services.js";
 import { sendApprovalPaymentWallet, sendApprovalPaymentWalletForCourse, sendRejectPaymentWallet, sendRejectPaymentWalletForCourse } from "./utils/paymentWallet.handler.js";
 import Course from '../../../DB/Models/course.model.js';
+import LiveCourse from "../../../DB/Models/liveCourse.model.js";
 
 //Done
 export const createPaymentWallet = async (req, res, next) => {
@@ -127,20 +128,41 @@ export const approvePaymentWallet = async (req, res, next) => {
                 message: isMailsSent.message,
             });
         }
-        const therapist = await Therapist.findById(paymentWallet.therapistId._id);
-        if (!therapist) {
+        // const therapist = await Therapist.findById(paymentWallet.therapistId._id);
+        // if (!therapist) {
+        //     return next({
+        //         cause: 400,
+        //         message: "فشل استرجاع المعالج",
+        //     });
+        // }
+        // if(paymentWallet.currency === "EGP") {
+        //     therapist.walletEgp += paymentWallet.amount * Number(process.env.THERAPIST_RATE_COURSE);
+        // } else if(paymentWallet.currency === "USD") {
+        //     therapist.walletUsd += paymentWallet.amount * Number(process.env.THERAPIST_RATE_COURSE);
+        // }
+        // await therapist.save();
+    }
+    // approve the payment wallet for liveCourses
+    if(paymentWallet.type === "liveCourse") {
+        console.log(paymentWallet)
+        const liveCourse = await LiveCourse.findById(paymentWallet.liveCourseId);
+        if (!liveCourse) {
             return next({
                 cause: 400,
-                message: "فشل استرجاع المعالج",
+                message: "فشل استرجاع الدورة",
             });
         }
-        if(paymentWallet.currency === "EGP") {
-            therapist.walletEgp += paymentWallet.amount * Number(process.env.THERAPIST_RATE_COURSE);
-        } else if(paymentWallet.currency === "USD") {
-            therapist.walletUsd += paymentWallet.amount * Number(process.env.THERAPIST_RATE_COURSE);
+        const isUserInCourse = liveCourse.enrolledUsers.some(user => user.toString() === paymentWallet.userId.toString());   
+        if (isUserInCourse) {
+            return next({
+                message: "انت بالفعل مشترك في هذه الدورة",
+                cause: 400,
+            });
         }
-        await therapist.save();
-    }
+        liveCourse.enrolledUsers.push(paymentWallet.userId);
+        liveCourse.enrolledUsersCount++;
+        await liveCourse.save();
+    };
 
     paymentWallet.status = "completed";
     await paymentWallet.save();
@@ -318,6 +340,44 @@ export const getPaymentWalletByCourseId = async (req, res, next) => {
         userId: _id,
         status: "pending",
         type: "course",
+    });
+    if(paymentWallets) {
+        return next({
+            message: "لديك دفع قيد الانتظار لهذه الدورة",
+            cause: 400,
+        });
+    }
+    return res.status(200).json({
+        success: true,
+        status: "success",
+        message: "تم استرجاع محفظة الدفع بنجاح",
+        data: paymentWallets,
+    });
+}
+
+//& ==================== get paymentWallet by courseId =========================
+export const getPaymentWalletByLiveCourseId = async (req, res, next) => {
+    const { courseId } = req.params;
+    const { _id } = req.authUser;
+    const liveCourse = await LiveCourse.findById(courseId);
+    console.log(courseId);
+    if (!liveCourse) {
+        return next({
+            cause: 400,
+            message: "فشل استرجاع الدورة",
+        });
+    }
+    const isUserInCourse = liveCourse.enrolledUsers.some(user => user.toString() === _id.toString());   
+    if (isUserInCourse) {
+        return next({
+            message: "انت بالفعل مشترك في هذه الدورة",
+            cause: 400,
+        });
+    }
+    const paymentWallets = await PaymentWallet.findOne({courseId,
+        userId: _id,
+        status: "pending",
+        type: "liveCourse",
     });
     if(paymentWallets) {
         return next({
