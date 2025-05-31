@@ -2,6 +2,7 @@ import Test from "../../../DB/Models/test.model.js";
 import Therapist from "../../../DB/Models/therapist.model.js";
 import path from "path";
 import fs from "fs";
+import { APIFeatures } from "../../utils/api-feature.js";
 //& ===================== CREATE TEST =====================
 export const createTest = async (req, res, next) => {
     const { title, description, time, type, questions, totalPoints, results } = req.body;
@@ -75,11 +76,27 @@ export const createTest = async (req, res, next) => {
 
 //& ===================== GET TESTS =====================
 export const getTests = async (req, res, next) => {
-    const tests = await Test.find();
+    let {page, size, ...search} = req.query;
+    if(!page) page = 1;
+    const feature = new APIFeatures(req.query, Test.find());
+    feature.pagination({page, size});
+    feature.search(search);
+    const tests = await feature.mongooseQuery;
+    if (!tests) {
+        return next({
+            cause: 400,
+            message: "فشل استرجاع محفظة الدفع",
+        });
+    }
+    const queryFilter = {};
+    if(search.title) queryFilter.title = { $regex: search.title, $options: 'i' };
+    const numberOfPages = Math.ceil(await Test.countDocuments(queryFilter) / (size ? size : 10) )
+    
     return res.status(200).json({
         success: true,
         message: "Tests fetched successfully",
-        tests
+        tests,
+        numberOfPages
     });
 }
 
@@ -226,5 +243,44 @@ export const deleteTest = async (req, res, next) => {
         success: true,
         message: "Test deleted successfully",
         test
+    });
+}
+
+//& ===================== ADD USER DATA TO TEST =====================
+export const addUserDataToTest = async (req, res, next) => {
+    const { id } = req.params;
+    const { name, email, whatsapp } = req.body;
+    const test = await Test.findById(id);
+    if(!test) {
+        return next({ message: "Test not found", status: 404 });
+    }
+    //& check if the user already exists in the test
+    const userExists = test.usersData.find(user => user.email === email);
+    if(userExists) {
+        test.usersData = test.usersData.map(user => {
+            if(user.email === email) {
+                return {
+                    ...user,
+                    name: name || user.name,
+                    whatsapp: whatsapp || user.whatsapp
+                };
+            }
+            return user;
+        });
+    } else {
+        test.usersData.push({
+            name,
+            email,
+            whatsapp
+        });
+    }
+    const updatedTest = await test.save();
+    if(!updatedTest) {
+        return next({ message: "User data not added to the test", status: 400 });
+    }
+    return res.status(200).json({
+        success: true,
+        message: "User data added to the test successfully",
+        updatedTest
     });
 }

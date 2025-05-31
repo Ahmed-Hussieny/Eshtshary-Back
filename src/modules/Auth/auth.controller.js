@@ -2,7 +2,9 @@ import Auth from "../../../DB/Models/auth.model.js";
 import bcrypt from "bcryptjs";
 import jwt from 'jsonwebtoken';
 import sendEmailService from '../../services/send-email.services.js';
-import { verificationEmailTemplate } from '../../utils/verify-email-templet.js';
+// import { verificationEmailTemplate } from '../../utils/verify-email-templet.js';
+import { forgotPasswordTemplate } from '../../utils/templates/forgotPassword.js';
+import { resetPasswordTemplate } from '../../utils/templates/resetPassword.js';
 
 //& ====================== SIGN UP ======================
 export const signUp = async (req, res, next) => {
@@ -23,14 +25,7 @@ export const signUp = async (req, res, next) => {
         process.env.JWT_SECRET,
         { expiresIn: "1h" }
     );
-    // Send a verification email
-    const isEmailSent = await sendEmailService({
-        to: email,
-        subject: 'Email verification',
-        message: verificationEmailTemplate(username,`${process.env.CLIENT_URL}/verifyEmail/${userToken}`)
-    });
-    if(!isEmailSent) return next({message: 'Email is not sent', cause: 500});
-    // Create a new user
+  // Create a new user
     const newUser = await Auth.create({
         username,
         email,
@@ -155,8 +150,9 @@ export const forgotPassword = async (req, res, next) => {
     // Send a reset password email
     const isEmailSent = await sendEmailService({
         to: email,
-        subject: 'Reset Password',
-        message: verificationEmailTemplate(existingUser.username,`${process.env.ADMIN_URL}/resetPassword/${resetPasswordToken}`)
+        subject: 'هل نسيت كلمة المرور؟ ولا يهمك',
+        message:forgotPasswordTemplate(existingUser.username, `${process.env.ADMIN_URL}/resetPassword/${resetPasswordToken}`),  
+        //  verificationEmailTemplate(existingUser.username,`${process.env.ADMIN_URL}/resetPassword/${resetPasswordToken}`)
     });
     if(!isEmailSent) return next({message: 'Email is not sent', cause: 500});
     // Send a response
@@ -215,6 +211,13 @@ export const resetPassword = async (req, res, next) => {
     existingUser.resetPasswordToken = undefined;
     existingUser.resetPasswordTokenExpires = undefined;
     await existingUser.save();
+
+    const isEmailSent = await sendEmailService({
+        to: existingUser.email,
+        subject: 'تم تحديث كلمة المرور الخاصة بك',
+        message:resetPasswordTemplate(existingUser.username),  
+    });
+    if(!isEmailSent) return next({message: 'Email is not sent', cause: 500});
     // Send a response
     return res.status(200).json({
         status: "success",

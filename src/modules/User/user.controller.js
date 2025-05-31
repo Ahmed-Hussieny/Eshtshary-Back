@@ -3,10 +3,14 @@ import bcrypt from "bcryptjs";
 import jwt from 'jsonwebtoken';
 import sendEmailService from '../../services/send-email.services.js';
 import { verificationEmailTemplate } from '../../utils/verify-email-templet.js';
+import { APIFeatures } from "../../utils/api-feature.js";
+import { forgotPasswordTemplate } from "../../utils/templates/forgotPassword.js";
+import { resetPasswordTemplate } from "../../utils/templates/resetPassword.js";
+import { welcomeUserTemplate } from "../../utils/templates/welcomeUser.js";
 
 //& ====================== SIGN UP ======================
 export const signUp = async (req, res, next) => {
-    const { username, email, password } = req.body;
+    const { username, email, password, nationality, residence, age, phoneNumber, specialization } = req.body;
     // Check if the user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -26,15 +30,15 @@ export const signUp = async (req, res, next) => {
     // Send a verification email
     const isEmailSent = await sendEmailService({
         to: email,
-        subject: 'Email verification',
-        message: verificationEmailTemplate(username,`${process.env.CLIENT_URL}/verifyEmail/${userToken}`)
+        subject: 'أهلاً بيك في Arab ADHD!',
+        message: welcomeUserTemplate(username,`${process.env.CLIENT_URL}`)
     });
     if(!isEmailSent) return next({message: 'Email is not sent', cause: 500});
     // Create a new user
     const newUser = await User.create({
         username,
         email,
-        password: hashedPassword,
+        password: hashedPassword, nationality, residence, age, phoneNumber, specialization
     });
     if(!newUser) {
         return next({
@@ -155,8 +159,8 @@ export const forgotPassword = async (req, res, next) => {
     // Send a reset password email
     const isEmailSent = await sendEmailService({
         to: email,
-        subject: 'Reset Password',
-        message: verificationEmailTemplate(existingUser.username,`${process.env.CLIENT_URL}/resetPassword/${resetPasswordToken}`)
+        subject: 'هل نسيت كلمة المرور؟ ولا يهمك',
+        message:forgotPasswordTemplate(existingUser.username, `${process.env.CLIENT_URL}/resetPassword/${resetPasswordToken}`),  
     });
     if(!isEmailSent) return next({message: 'Email is not sent', cause: 500});
     // Send a response
@@ -166,6 +170,7 @@ export const forgotPassword = async (req, res, next) => {
         message: "تم إرسال بريد إعادة تعيين كلمة المرور بنجاح",
     });
 }
+
 //& ====================== verifyResetToken ======================
 export const verifyResetToken = async (req, res, next) => {
     // 1- get the reset code from the request body
@@ -214,6 +219,13 @@ export const resetPassword = async (req, res, next) => {
     existingUser.resetPasswordToken = undefined;
     existingUser.resetPasswordTokenExpires = undefined;
     await existingUser.save();
+
+    const isEmailSent = await sendEmailService({
+        to: existingUser.email,
+        subject: 'تم تحديث كلمة المرور الخاصة بك',
+        message:resetPasswordTemplate(existingUser.username),  
+    });
+    if(!isEmailSent) return next({message: 'Email is not sent', cause: 500});
     // Send a response
     return res.status(200).json({
         status: "success",
@@ -224,19 +236,23 @@ export const resetPassword = async (req, res, next) => {
 
 //& ====================== GET ALL USERS ======================
 export const getAllUsers = async (req, res, next) => {
-    const users = await User.find({}).select("-password -__v");
-    if (!users) {
-        return next({
-            cause: 404,
-            message: "لا يوجد مستخدمين",
-        });
-    }
+    let {page, size, ...search} = req.query;
+    if(!page) page = 1;
+    const feature = new APIFeatures(req.query, User.find().select("-password -__v"));
+    feature.pagination({page, size});
+    feature.search(search);
+    const users = await feature.mongooseQuery;
+    const queryFilter = {};
+    if(search.username) queryFilter.username = { $regex: search.username, $options: 'i' };
+    const numberOfPages = Math.ceil(await User.countDocuments(queryFilter) / (size ? size : 10) )
+    
     return res.status(200).json({
         status: "success",
         success: true,
         message: "تم استرجاع جميع المستخدمين بنجاح",
         data: {
             users,
+            numberOfPages
         },
     });
 }
@@ -339,5 +355,8 @@ export const deleteUser = async (req, res, next) => {
         status: "success",
         success: true,
         message: "تم حذف المستخدم بنجاح",
+        user:{
+            _id: existingUser._id
+        }
     });
 }

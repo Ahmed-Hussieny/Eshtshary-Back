@@ -24,8 +24,11 @@ export class APIFeatures {
     }
     search(search){
         const queryFilter = {};
-        if(search.name) queryFilter.name = { $regex: search.name, $options: 'i' }
-        if(search.title) queryFilter.title = { $regex: search.title, $options: 'i' }; // i for case-insensitive
+        if(search.name) queryFilter.name = { $regex: search.name, $options: 'i' };
+        if(search.username) queryFilter.username = { $regex: search.username, $options: 'i' };
+        if(search.full_name) queryFilter.full_name = { $regex: search.full_name, $options: 'i' };
+        if(search.account) queryFilter.account = { $regex: search.account, $options: 'i' };
+        if(search.title) queryFilter.title = { $regex: search.title, $options: 'i' };
         this.mongooseQuery = this.mongooseQuery.find(queryFilter);
         return this;
     }

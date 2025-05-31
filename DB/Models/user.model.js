@@ -20,6 +20,29 @@ const userSchema = new Schema({
         type: String,
         default: systemRoles.USER,
     },
+    // Personal Information
+    nationality: {
+        type: String,
+        default: undefined,
+    },
+    residence: {
+        type: String,
+        default: undefined,
+    },
+    age: {
+        type: Number,
+        default: undefined,
+    },
+    phoneNumber: {
+        type: String,
+        default: undefined,
+    },
+    specialization: [
+        {
+            type: String,
+            default: undefined,
+        }
+    ],
     isVerified: {
         type: Boolean,
         default: false,

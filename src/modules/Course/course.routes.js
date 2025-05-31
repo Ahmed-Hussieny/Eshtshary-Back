@@ -5,12 +5,13 @@ import { multerMiddlewareLocal } from "../../middlewares/multer.js";
 import { allowedExtensions } from "../../utils/allowedExtensions.js";
 import { userAuth } from "../../middlewares/userAuth.middleware.js";
 import { systemRoles } from "../../utils/system-roles.js";
+import { auth } from "../../middlewares/auth.middleware.js";
 
 const courseRouter = Router();
 
 courseRouter.post(
     "/createCourse",
-    userAuth([systemRoles.THERAPIST]),
+    auth([systemRoles.ADMIN]),
     multerMiddlewareLocal({
         destinationFolder: "Courses",
         extensions: allowedExtensions.image,
@@ -44,7 +45,7 @@ courseRouter.post(
 
 courseRouter.post(
     "/acceptPayment/:paymentWalletId",
-    userAuth([systemRoles.THERAPIST]),
+    auth([systemRoles.ADMIN]),
     expressAsyncHandler(courseController.acceptPayment)
 );
 
@@ -77,19 +78,19 @@ courseRouter.get(
 // Get courses by a therapist
 courseRouter.get(
     "/get-therapist-courses",
-    userAuth([systemRoles.THERAPIST]),
-    expressAsyncHandler(courseController.getTherapistCourses)
+    auth([systemRoles.ADMIN]),
+    expressAsyncHandler(courseController.getCourses)
 );
 
 courseRouter.get(
     "/get-therapist-course-details/:courseId",
-    userAuth([systemRoles.THERAPIST]),
+    auth([systemRoles.ADMIN]),
     expressAsyncHandler(courseController.getTherapistCourseDetails)
 );
 
 courseRouter.put(
     "/edit-course-by-therapist/:courseId",
-    userAuth([systemRoles.THERAPIST]),
+    auth([systemRoles.ADMIN]),
     multerMiddlewareLocal({
         destinationFolder: "Courses",
         extensions: allowedExtensions.image,
@@ -101,5 +102,16 @@ courseRouter.put(
 courseRouter.post(
     "/webhook",
     expressAsyncHandler(courseController.webhookHandler)
+);
+
+courseRouter.delete(
+    "/delete-course/:courseId",
+    auth([systemRoles.ADMIN]),
+    expressAsyncHandler(courseController.deleteCourse)
+);
+
+courseRouter.get(
+    "/getCourseById/:courseId",
+    expressAsyncHandler(courseController.getCourseById)
 );
 export default courseRouter;

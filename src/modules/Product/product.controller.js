@@ -1,6 +1,7 @@
 import Product from "../../../DB/Models/product.model.js";
 import fs from "fs";
 import path from "path";
+import { APIFeatures } from "../../utils/api-feature.js";
 
 //& ================ Add Product ================
 export const addProduct = async (req, res, next) => {
@@ -34,10 +35,18 @@ export const addProduct = async (req, res, next) => {
 
 //& ================ Get All Products ================
 export const getAllProducts = async (req, res, next) => {
-    const products = await Product.find();
+    const {page =1, size, ...search} = req.query;
+    const feature = new APIFeatures(req.query, Product.find());
+    feature.pagination({page, size});
+    feature.search(search);
+    const products = await feature.mongooseQuery;
+    const queryFilter = {};
+    if(search.title) queryFilter.title = { $regex: search.title, $options: 'i' };
+    const numberOfPages = Math.ceil(await Product.countDocuments(queryFilter) / (size ? size : 10) )
     res.status(200).json({
         success: true,
-        products
+        products,
+        numberOfPages
     });
 };
 

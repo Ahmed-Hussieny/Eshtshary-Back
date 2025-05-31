@@ -25,4 +25,5 @@ testRouter.put("/updateTest/:id",
 }), expressAsyncHandler(testController.updateTest));
 testRouter.delete("/deleteTest/:id", expressAsyncHandler(testController.deleteTest));
 
+testRouter.post("/addUserDataToTest/:id", expressAsyncHandler(testController.addUserDataToTest));
 export default testRouter;

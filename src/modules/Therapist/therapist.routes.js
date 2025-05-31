@@ -5,6 +5,7 @@ import { allowedExtensions } from '../../utils/allowedExtensions.js';
 import { multerMiddlewareLocal } from '../../middlewares/multer.js';
 import { userAuth } from "../../middlewares/userAuth.middleware.js";
 import { systemRoles } from "../../utils/system-roles.js";
+import { auth } from '../../middlewares/auth.middleware.js';
 const therapistRouter = Router();
 therapistRouter.post("/signup", multerMiddlewareLocal({
     destinationFolder: "Therapists",
@@ -43,5 +44,11 @@ therapistRouter.get('/getAllTherapistsForAdmin', expressAsyncHandler(therapistCo
 therapistRouter.post(
     "/verifyResetToken",
     expressAsyncHandler(therapistController.verifyResetToken)
+);
+
+therapistRouter.post(
+    "/rejectTherapist/:id",
+  auth([systemRoles.ADMIN]),
+    expressAsyncHandler(therapistController.rejectTherapist)
 );
 export default therapistRouter;

@@ -1,7 +1,11 @@
 import Cart from "../../../DB/Models/cart.model.js";
 import Order from "../../../DB/Models/order.model.js";
 import PaymentWallet from "../../../DB/Models/paymentWallet.model.js";
+import User from "../../../DB/Models/user.model.js";
+import sendEmailService from "../../services/send-email.services.js";
 import { createCharge } from "../../services/tapPayment.js";
+import { APIFeatures } from "../../utils/api-feature.js";
+import { orderDeliveredTemplate, orderPaidTemplate, orderPlacedTemplate, prePaymentOrderTemplate } from "../../utils/templates/order.js";
 
 //& ==================== CREATE ORDER ====================
 export const createOrder = async (req, res, next) => {
@@ -34,7 +38,7 @@ export const createOrder = async (req, res, next) => {
         price: item.originalPrice,
         productId: item.productId._id
         }));
-        const shippingPrice = 50;
+        const shippingPrice = 0;
         const currency = userCart.currency || "EGP";
         let totalPrice = 0;
         if (currency === "EGP") {
@@ -77,6 +81,22 @@ export const createOrder = async (req, res, next) => {
         await userCart.save();
         // Create PaymentWallet transaction
         
+        const user = await User.findById(userId);
+        if(!user){
+            return next({ message:"هذا المستخدم غير موجود",cause: 400 })
+        }
+        const emailSubject = `استلمنا طلب الدفع – في انتظار التأكيد`;
+        const isEmailSentClient = await sendEmailService({
+            to: user.email,
+            subject: emailSubject,
+            message: prePaymentOrderTemplate(user.username,order),
+        });
+        if(!isEmailSentClient) {
+            return {
+                status: false,
+                message: "Email failed to send, but session was created"
+            }
+        }
         return res.status(201).json({success:true, message: "Order created successfully" });
     }
     
@@ -175,18 +195,22 @@ export const webhookHandler = async (req, res, next) => {
 
 //& ==================== GET ALL ORDERS ====================
 export const getAllOrders = async (req, res, next) => {
-    const orders = await Order.find().populate("orderItems.productId");
-    if (!orders) {
-        return next({ message: "No orders found", status: 404 });
-    }
-    return res.status(200).json({success:true, orders: orders });
+    let {page, size} = req.query;
+    if(!page) page = 1;
+    const feature = new APIFeatures(req.query, Order.find().populate("orderItems.productId").sort({createdAt: -1}));
+    feature.pagination({page, size});
+    const orders = await feature.mongooseQuery;
+    const queryFilter = {};
+    const numberOfPages = Math.ceil(await Order.countDocuments(queryFilter) / (size ? size : 10) )
+    return res.status(200).json({success:true, orders, numberOfPages });
 };
 
 //& ==================== Change Order Status ====================
 export const changeOrderStatus = async (req, res, next) => {
     const { orderId } = req.params;
     const { status } = req.body;
-    const order = await Order.findById(orderId);
+    console.log(orderId, status);
+    const order = await Order.findById(orderId).populate("userId");
     if (!order) {
         return next({ message: "Order not found", status: 404 });
     }
@@ -196,6 +220,70 @@ export const changeOrderStatus = async (req, res, next) => {
     } else if (status === "Cancelled") {
         order.isCancelled = true;
         order.cancelledAt = new Date();
+    }
+    if (status === "Paid") {
+        const emailSubject = `تم التأكيد على طلبك – في انتظار التسليم`;
+        const isEmailSentClient = await sendEmailService({
+            to: order.userId.email,
+            subject: emailSubject,
+            message: orderPaidTemplate(order.userId.username, order),
+        });
+        if(!isEmailSentClient) {
+            return {
+                status: false,
+                message: "Email failed to send, but session was created"
+            }
+        }
+    }
+    if(status === "Placed") {
+        const emailSubject = `طلبك في الطريق!`;
+        const isEmailSentClient = await sendEmailService({
+            to: order.userId.email,
+            subject: emailSubject,
+            message: orderPlacedTemplate(order.userId.username, order),
+        });
+        if(!isEmailSentClient) {
+            return {
+                status: false,
+                message: "Email failed to send, but session was created"
+            }
+        }
+    } 
+    if(status === "Cancelled") {
+        const emailSubject = `تم إلغاء طلبك – نأسف للإزعاج`;
+        const isEmailSentClient = await sendEmailService({
+            to: order.userId.email,
+            subject: emailSubject,
+            message: `<p>مرحبًا ${order.userId.username}،</p>
+                      <p>نأسف لإبلاغك أنه تم إلغاء طلبك.</p>
+                      <p>إذا كان لديك أي استفسارات، لا تتردد في التواصل معنا.</p>
+                      <p>مع خالص التحيات،</p>
+                      <p>فريق Arab ADHD</p>`,
+        });
+        if(!isEmailSentClient) {
+            return {
+                status: false,
+                message: "Email failed to send, but session was created"
+            }
+        }
+    }
+    if(status === "Delivered") {
+        order.isDelivered = true;
+        order.deliveredAt = new Date();
+        order.deleveredBy = req.authUser._id;
+        const feedbackLink = `${process.env.CLIENT_URL}/profile/orders/${order._id}/feedback`;
+        const emailSubject = `وصل لك الطلب؟ شاركنا رأيك`;
+        const isEmailSentClient = await sendEmailService({
+            to: order.userId.email,
+            subject: emailSubject,
+            message: orderDeliveredTemplate(order.userId.username, feedbackLink),
+        });
+        if(!isEmailSentClient) {
+            return {
+                status: false,
+                message: "Email failed to send, but session was created"
+            }
+        }
     }
     order.orderStatus = status;
     await order.save();

@@ -8,12 +8,13 @@ import { HandleGenerateCertificate } from "./utils/generateCertificate.js";
 import User from "../../../DB/Models/user.model.js";
 import { createCharge } from "../../services/tapPayment.js";
 import Therapist from "../../../DB/Models/therapist.model.js";
-import { handelCreatePaymentWallet } from "../Session/utils/session.handler.js";
 import axios from "axios";
+import { APIFeatures } from "../../utils/api-feature.js";
+import { prePaymentSessionTemplate } from "../../utils/templates/prePaymentSession.js";
 
 //& ===================== ADD COURSE =====================
 export const createCourse = async (req, res, next) => {
-    const { id } = req.authTherapist;
+    const { id } = req.authUser;
     const { title, description, priceUSD,priceEGP, videos } = req.body;
     // Parse the videos string if it's a string
     let videosData = [];
@@ -35,7 +36,7 @@ export const createCourse = async (req, res, next) => {
     // check if course already exists
     const courseExists = await Course.findOne({
         title,
-        therapistId: id,
+        addedBy: id,
     });
     if (courseExists) {
         return next({ message: "الدورة موجودة بالفعل", status: 400 });
@@ -47,7 +48,7 @@ export const createCourse = async (req, res, next) => {
         description,
         priceUSD,
         priceEGP,
-        therapistId: id,
+        addedBy: id,
         thumbnail,
     });
 
@@ -92,7 +93,6 @@ export const createCourse = async (req, res, next) => {
 export const enrollInCourse = async (req, res, next) => {
     const { courseId } = req.params;
     const { id: userId } = req.authUser;
-    console.log("req.files", req.body);
 
     const { paymentMethod, amount, currency, transferNumber, transferAccount } = req.body;
 
@@ -124,7 +124,6 @@ export const enrollInCourse = async (req, res, next) => {
     // handel payment
     const paymentWallet = await PaymentWallet.create({
         userId,
-        therapistId: course.therapistId,
         courseId,
         amount,
         paymentMethod,
@@ -134,7 +133,24 @@ export const enrollInCourse = async (req, res, next) => {
         transactionImage: transactionImageUrl,
     });
     if(!paymentWallet) {
-        return next({ message: "فشل الدفع", status: 400 });
+        return next({ message: "فشل الدفع", cause: 400 });
+    }
+
+    const user = await User.findById(userId);
+    if(!user){
+        return next({ message:"هذا المستخدم غير موجود",cause: 400 })
+    }
+    const emailSubject = `استلمنا طلب الدفع – في انتظار التأكيد`;
+    const isEmailSentClient = await sendEmailService({
+        to: user.email,
+        subject: emailSubject,
+        message: prePaymentSessionTemplate(user.username, "دورة " + course.title),
+    });
+    if(!isEmailSentClient) {
+        return {
+            status: false,
+            message: "Email failed to send, but session was created"
+        }
     }
     // return response
     return res.status(200).json({
@@ -151,7 +167,7 @@ export const enrollCourseByCard = async (req, res, next) => {
     const { amount, currency } = req.body;
 
     // Check if course exists
-    const course = await Course.findById(courseId).populate("therapistId");
+    const course = await Course.findById(courseId).populate("addedBy");
     if (!course) {
         return next({ message: "الدورة غير موجودة", status: 404 });
     }
@@ -171,13 +187,13 @@ export const enrollCourseByCard = async (req, res, next) => {
       const chargeUrl = await createCharge({
         price: +amount,
         title: course.title,
-        id: course.therapistId._id,
+        id: course.addedBy._id,
         username: user.username,
         email: user.email,
         currency: currency,
         metadata: {
           userId,
-          therapistId:course.therapistId._id,
+          addedBy:course.addedBy._id,
           courseId: course._id,
           currency,
           amount,
@@ -207,7 +223,7 @@ export const webhookHandler = async (req, res, next) => {
     // console.log("Webhook received:", req.body);
   if (status === "CAPTURED") {
     const { userId,
-          therapistId,
+          addedBy,
           courseId,
           currency,
           amount} = metadata;
@@ -243,27 +259,12 @@ export const webhookHandler = async (req, res, next) => {
         course.enrolledUsersCount++;
         await course.save();
         
-        const therapist = await Therapist.findById(therapistId);
-        if (!therapist) {
-            return next({
-                cause: 400,
-                message: "فشل استرجاع المعالج",
-            });
-        }
-        if(currency === "EGP") {
-            therapist.walletEgp += amount * Number(process.env.THERAPIST_RATE_COURSE);
-        } else if(currency === "USD") {
-            therapist.walletUsd += amount * Number(process.env.THERAPIST_RATE_COURSE);
-        }
-        await therapist.save();
-
         // Handle payment
         const paymentObject = {
           userId,
-          therapistId,
           account: "card",
-          amount: metadata.amount,
-          currency: metadata.currency,
+          amount: amount,
+          currency: currency,
           paymentMethod: "card",
           transactionImageUrl: null,
           type: "course",
@@ -273,7 +274,6 @@ export const webhookHandler = async (req, res, next) => {
 
         const paymentWallet = await PaymentWallet.create(paymentObject);
         if(!paymentWallet) {
-            console.log("oooooooooooooo")
             return next({ message: "فشل الدفع", status: 400 });
         }
 
@@ -292,16 +292,7 @@ export const webhookHandler = async (req, res, next) => {
         if(!isEmailSentClient) {
           console.error('Email failed to send, but session was created');
         }
-        const emailSubjectTherapist = `تم تسجيل مستخدم جديد في الدورة`;
-        const emailMessageTherapist = `تم تسجيل المستخدم ${user.username} في الدورة ${course.title}`;
-        const isEmailSentTherapist = await sendEmailService({
-          to: therapist.email,
-          subject: emailSubjectTherapist,
-          message: emailMessageTherapist
-        });
-        if(!isEmailSentTherapist) {
-          console.error('Email to therapist failed to send, but session was created');
-        }
+        
         return res.status(200).json({
           message: "Payment verified, sessions created, and emails sent",
         });
@@ -487,22 +478,33 @@ export const getEnrolledCourseDetails = async (req, res, next) => {
 
 //& ===================== GET COURSES =====================
 export const getCourses = async (req, res, next) => {
-    const courses = await Course.find().populate("therapistId");
+    let {page, size, ...search} = req.query;
+    console.log(page, size, search)
+    if(!page) page = 1;
+    const feature = new APIFeatures(req.query, Course.find().populate("addedBy"));
+    feature.pagination({page, size});
+    feature.search(search);
+    const courses = await feature.mongooseQuery;
+    const queryFilter = {};
+    if(search.title) queryFilter.title = { $regex: search.title, $options: 'i' };
+    const numberOfPages = Math.ceil(await Course.countDocuments(queryFilter) / (size ? size : 10) )
+    
     return res.status(200).json({
-        status: "success",
-        data: {
-            courses 
+            success: true,
+            message: "Live courses retrieved successfully",
+            data: {
+            courses ,
+            numberOfPages
         }
-    });
+        });
 };
 
 //& ===================== Generate Certificate =====================
 export const generateCertificate = async (req, res, next) => {
     const { courseId } = req.params;
     const { id: userId } = req.authUser;
-    console.log("courseId", courseId);
     // Check if course exists
-    const course = await Course.findById(courseId).populate("therapistId");
+    const course = await Course.findById(courseId).populate("addedBy");
     if (!course) {
         return next({ message: "الدورة غير موجودة", status: 404 });
     }
@@ -539,7 +541,7 @@ export const generateCertificate = async (req, res, next) => {
     const certificate = await HandleGenerateCertificate({
         course: course.title,
         user: user.username,
-        therapist: course.therapistId.name,
+        therapist: course.addedBy.name,
         date: new Date(),
     });
 
@@ -560,9 +562,8 @@ export const generateCertificate = async (req, res, next) => {
 
 //& ==================== GET Therapist Courses ====================
 export const getTherapistCourses = async (req, res, next) => {
-    const { id: therapistId } = req.authTherapist;
 
-    const courses = await Course.find({ therapistId }).populate("therapistId");
+    const courses = await Course.find();
 
     return res.status(200).json({
         status: "success",
@@ -574,9 +575,9 @@ export const getTherapistCourses = async (req, res, next) => {
 //& ==================== GET Course Details ====================
 export const getTherapistCourseDetails = async (req, res, next) => {
     const { courseId } = req.params;
-    const { id: therapistId } = req.authTherapist;
+    const { id: therapistId } = req.authUser;
 
-    const course = await Course.findById(courseId).populate("therapistId").populate({
+    const course = await Course.findById(courseId).populate({
             path: 'videos',
             select: 'title order duration videoUrl',
             populate: {
@@ -585,12 +586,10 @@ export const getTherapistCourseDetails = async (req, res, next) => {
             }
         });
 
+    console.log(course);
+
     if (!course) {
         return next({ message: "الدورة غير موجودة", status: 404 });
-    }
-
-    if (course.therapistId._id.toString() !== therapistId) {
-        return next({ message: "ليس لديك صلاحية للوصول إلى هذه الدورة", status: 403 });
     }
 
     return res.status(200).json({
@@ -603,9 +602,9 @@ export const getTherapistCourseDetails = async (req, res, next) => {
 //& ========================= Update Course ===================
 export const updateCourseByTherapist = async (req, res, next) => {
     const { courseId } = req.params;
-    const { id: therapistId } = req.authTherapist;
+    const { id: addedBy } = req.authUser;
     const { title, description, priceUSD, priceEGP, videos } = req.body;
-
+    console.log("req.files",  req.body);
     // Parse the videos string if it's a string
     let videosData = [];
     try {
@@ -620,16 +619,12 @@ export const updateCourseByTherapist = async (req, res, next) => {
         return next({ message: "الدورة غير موجودة", status: 404 });
     }
 
-    // Check if therapist is authorized to update the course
-    if (course.therapistId.toString() !== therapistId) {
-        return next({ message: "ليس لديك صلاحية لتحديث هذه الدورة", status: 403 });
-    }
-
     // Update course details
     course.title = title || course.title;
     course.description = description || course.description;
     course.priceUSD = priceUSD || course.priceUSD;
     course.priceEGP = priceEGP || course.priceEGP;
+    course.addedBy = addedBy || course.addedBy;
 
     // Update thumbnail if provided
     if (req.files?.thumbnail) {
@@ -715,4 +710,59 @@ export const updateCourseByTherapist = async (req, res, next) => {
             course,
         },
     });
+};
+
+
+//& =============== DELETE COURSE ======================
+export const deleteCourse = async (req, res, next) => {
+    const { courseId } = req.params;
+    const { id: addedBy } = req.authUser;
+    // Check if course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+        return next({ message: "الدورة غير موجودة", status: 404 });
+    }
+    // Check if the user is the owner of the course
+    if (course.addedBy.toString() !== addedBy.toString()) {
+        return next({ message: "ليس لديك صلاحية لحذف هذه الدورة", status: 403 });
+    }
+    // Delete the course and videos and questions
+    await Video.deleteMany({ courseId: course._id });
+    await Question.deleteMany({ videoId: { $in: course.videos } });
+    const deletedCourse = await Course.findByIdAndDelete(courseId);
+    // Optionally, you can also delete the course from the user's progress
+    // await UserProgress.deleteMany({ courseId: course._id });
+
+
+    return res.status(200).json({
+        success: true,
+        status: "success",
+        message: "تم حذف الدورة بنجاح",
+        course:deletedCourse
+    });
+};
+
+//& ===================== GET COURSE BY ID =====================
+export const getCourseById = async (req, res, next) => {
+    const { courseId } = req.params;
+
+    try {
+        const course = await Course.findById(courseId)
+            .populate("addedBy")
+            .populate("videos","-videoUrl"); // <-- ensure this populates full video documents
+
+        if (!course) {
+            return next({ message: "الدورة غير موجودة", status: 404 });
+        }
+
+        return res.status(200).json({
+            success: true,
+            status: "success",
+            data: {
+                course,
+            },
+        });
+    } catch (error) {
+        return next({ message: "خطأ في جلب البيانات", status: 500 });
+    }
 };

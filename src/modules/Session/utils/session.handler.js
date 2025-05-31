@@ -86,6 +86,8 @@ export const createSessions = async (therapist, userId, requestedSlots, currency
             status: statusScheduled?"scheduled":"pending",
             notes: "",
             meetingLink: "",
+            is24HourReminderSent: false,
+            is1HourReminderSent: false,
         });
 
         // Update the therapist's availability
@@ -128,6 +130,7 @@ export const handelCreatePaymentWallet = async (paymentObject) => {
     }
     return paymentWallet;
 }
+
 export const sendEmailToUser = async (user, sessions, therapist) => {
     const emailSubject = `New Session Created`;
     const emailMessage = `Your therapy session is under review. Here are the details: ${sessions.map(session => `

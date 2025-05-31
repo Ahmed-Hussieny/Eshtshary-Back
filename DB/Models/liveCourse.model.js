@@ -43,6 +43,14 @@ const liveCourseSchema = new Schema({
                 type: String,
                 default: "",
             },
+            is24HourReminderSent: {
+                type: Boolean,
+                default: false,
+            },
+            is1HourReminderSent: {
+                type: Boolean,
+                default: false,
+            },
         }
     ],
     enrolledUsers: [

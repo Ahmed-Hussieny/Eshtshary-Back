@@ -54,6 +54,35 @@ const sessionSchema = new Schema(
     meetingLink: {
       type: String,
     },
+    is24HourReminderSent: {
+        type: Boolean,
+        default: false,
+    },
+    is1HourReminderSent: {
+        type: Boolean,
+        default: false,
+    },
+    username: {
+      type: String,
+      default: "",
+    },
+    typeOfSession: {
+      type: String,
+      enum: ["لأول مرة", "رحلة علاجية", "استشارة", "جلسة متابعة"],
+      default: "لأول مرة",
+    },
+    lastDate: {
+      type: String,
+      default: "",
+    },
+    challenges: [
+      {
+        type: String,
+        default: "",
+      },
+    ],
+    
+
   },
   { timestamps: true }
 );

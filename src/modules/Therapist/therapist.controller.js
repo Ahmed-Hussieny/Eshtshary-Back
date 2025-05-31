@@ -7,6 +7,11 @@ import fs from "fs";
 import path from "path";
 import moment from "moment";
 import Session from "../../../DB/Models/session.model.js";
+import { APIFeatures } from "../../utils/api-feature.js";
+import { forgotPasswordTemplate } from "../../utils/templates/forgotPassword.js";
+import { resetPasswordTemplate } from "../../utils/templates/resetPassword.js";
+import { acceptTherapistTemplate, rejectTherapistTemplate } from "../../utils/templates/therapist.js";
+import { signUpTherapistThemplate } from "../../utils/templates/signUpTherapist.js";
 //& ====================== SIGN UP ======================
 export const signUp = async (req, res, next) => {
   const {
@@ -27,12 +32,8 @@ export const signUp = async (req, res, next) => {
     yearsOfExperience,
     licenseNumber,
     licenseOrganization,
-    isWorkingInClinic,
-    clinicName,
     availability,
   } = req.body;
-
-  console.log("req.body", specialization);
   // files cv professionalCertificates
   const { cv, professionalCertificates } = req.files;
   if (!cv || !professionalCertificates) {
@@ -87,8 +88,6 @@ export const signUp = async (req, res, next) => {
     yearsOfExperience,
     licenseNumber,
     licenseOrganization,
-    isWorkingInClinic,
-    clinicName,
     availabilityForSession: availability,
     cv: cvPath,
     professionalCertificates: professionalCertificatesPath,
@@ -102,13 +101,8 @@ export const signUp = async (req, res, next) => {
   // Send a verification email
   const isEmailSent = await sendEmailService({
     to: email,
-    subject: "Notification Email",
-    message: `
-            Dear ${full_name},
-            Thank you for signing up! We are working on your account and will notify you once it's ready to join us.
-            Best regards,
-            The Team
-        `,
+    subject: "حسابك قيد المراجعة",
+    message: signUpTherapistThemplate(full_name)
   });
   if (!isEmailSent) return next({ message: "Email is not sent", cause: 500 });
   // Send a response
@@ -119,6 +113,7 @@ export const signUp = async (req, res, next) => {
   });
 };
 
+//& =================== ACCEPT THERAPIST ======================
 export const acceptTherapist = async (req, res, next) => {
   const { id } = req.params;
   // Check if the Therapist exists
@@ -149,13 +144,8 @@ export const acceptTherapist = async (req, res, next) => {
   // Send a email
   const isEmailSent = await sendEmailService({
     to: existingTherapist.email,
-    subject: "Notification Email",
-    message: `
-            Dear ${existingTherapist.full_name},
-            Your account has been accepted! You can now log in using this password ${randomPassword}.
-            Best regards,
-            The Team
-        `,
+    subject: "أهلاً في Arab ADHD حسابك اتفعل، يلا نجهزه سوا!",
+    message: acceptTherapistTemplate(existingTherapist.full_name, existingTherapist.email, randomPassword, `${process.env.THERAPIST_URL}`),
   });
   if (!isEmailSent) return next({ message: "Email is not sent", cause: 500 });
   // Send a response
@@ -166,6 +156,33 @@ export const acceptTherapist = async (req, res, next) => {
   });
 };
 
+//& ====================== Reject THERAPIST ======================
+export const rejectTherapist = async (req, res, next) => {
+  const { id } = req.params;
+  // Check if the Therapist exists
+  const existingTherapist = await Therapist.findById(id);
+  if (!existingTherapist) {
+    return next({
+      cause: 404,
+      message: "المستخدم غير موجود",
+    });
+  }
+  // Send a rejection email
+  const isEmailSent = await sendEmailService({
+    to: existingTherapist.email,
+    subject: "عذرًا، طلبك للانضمام كمعالج على Arab ADHD لم يُقبل",
+    message:rejectTherapistTemplate(existingTherapist.full_name),
+  });
+  if (!isEmailSent) return next({ message: "Email is not sent", cause: 500 });
+  //delete the Therapist
+  await Therapist.findByIdAndDelete(id);
+  // Send a response
+  return res.status(200).json({
+    status: "success",
+    success: true,
+    message: "تم رفض المستخدم بنجاح",
+  });
+};
 //& ====================== ADD APPOINTMENTS ======================
 export const addAppointments = async (req, res, next) => {
   const { id } = req.params;
@@ -300,34 +317,56 @@ export const updateTherapistImage = async (req, res, next) => {
 
 //& ====================== getAllTherapists For Admin ======================
 export const getAllTherapistsForAdmin = async (req, res, next) => {
-  const Therapists = await Therapist.find().select("-password -__v");
-    if (!Therapists) {
-      return next({
-        cause: 404,
-        message: "لا يوجد مستخدمين",
-      });
-    }
-    return res.status(200).json({
-      status: "success",
-      success: true,
-      message: "تم استرجاع جميع المستخدمين بنجاح",
-      data: {
-        Therapists,
-      },
-    });
+  const { page, size, ...search } = req.query;
+  if (!page) page = 1;
+  const feature = new APIFeatures(
+    req.query,
+    Therapist.find().select("-password -__v")
+  );
+  feature.pagination({ page, size });
+  feature.search(search);
+  const Therapists = await feature.mongooseQuery;
+
+  const queryFilter = {};
+  if (search.full_name)
+    queryFilter.full_name = { $regex: search.full_name, $options: "i" };
+  const numberOfPages = Math.ceil(
+    (await Therapist.countDocuments(queryFilter)) / (size || 10)
+  );
+  return res.status(200).json({
+    status: "success",
+    success: true,
+    message: "تم استرجاع جميع المستخدمين بنجاح",
+    data: {
+      Therapists,
+      numberOfPages,
+    },
+  });
 };
 //& ====================== GET ALL TherapistS ======================
 export const getAllTherapists = async (req, res, next) => {
-    const Therapists = await Therapist.find({
-        isVerified: true,
-        prices: { $ne: null },
-    }).select("-password -__v");
-    if (!Therapists) {
-      return next({
-        cause: 404,
-        message: "لا يوجد مستخدمين",
-      });
+  try {
+    const { page = 1, size = 10, specialization, ...search } = req.query;
+    // Build base query conditions
+    const queryConditions = {
+      isVerified: true,
+      prices: { $ne: null },
+    };
+
+    if (specialization) {
+      queryConditions.specialization = { $in: [specialization] };
     }
+
+    // Initialize APIFeatures
+    const baseQuery = Therapist.find(queryConditions).select("-password -__v");
+    const feature = new APIFeatures(req.query, baseQuery);
+
+    // Apply pagination and search if implemented in APIFeatures
+    feature.pagination({ page, size });
+    feature.search(search);
+
+    // Execute query
+    const Therapists = await feature.mongooseQuery;
 
     return res.status(200).json({
       status: "success",
@@ -337,170 +376,166 @@ export const getAllTherapists = async (req, res, next) => {
         Therapists,
       },
     });
-  };
+  } catch (error) {
+    return next(error);
+  }
+};
 
 //& ====================== GET USER BY ID ======================
 export const getTherapistById = async (req, res, next) => {
-    const { id } = req.params;
-    const therapist = await Therapist.findById(id).select("-password -__v");
-    if (!therapist) {
+  const { id } = req.params;
+  const therapist = await Therapist.findById(id).select("-password -__v");
+  if (!therapist) {
+    return next({
+      cause: 404,
+      message: "المستخدم غير موجود",
+    });
+  }
+
+  return res.status(200).json({
+    status: "success",
+    success: true,
+    message: "تم استرجاع المستخدم بنجاح",
+    data: {
+      therapist,
+    },
+  });
+};
+
+//& ====================== GET Logged In Therapist  ======================
+export const getLoggedInTherapist = async (req, res, next) => {
+  const { id } = req.authTherapist;
+  const therapist = await Therapist.findById(id).select("-password -__v");
+
+  if (!therapist) {
+    return next({
+      cause: 404,
+      message: "المستخدم غير موجود",
+    });
+  }
+
+  return res.status(200).json({
+    status: "success",
+    success: true,
+    message: "تم استرجاع المستخدم بنجاح",
+    data: {
+      therapist,
+    },
+  });
+};
+
+//& ====================== UPDATE USER ======================
+export const updateTherapist = async (req, res, next) => {
+  const { id } = req.authTherapist;
+  const {
+    Job_title,
+    full_name,
+    prefix,
+    email,
+    phoneNumber,
+    oldPassword,
+    newPassword,
+    dateOfBirth,
+    description,
+    availabilityForSession,
+    gender,
+    countryOfResidence,
+    fluentLanguages,
+    highEducation,
+    category,
+    specialization,
+    yearsOfExperience,
+    educations,
+    experience,
+    licenseOrganization,
+    licenseNumber,
+    nationality,
+    prices,
+  } = req.body;
+  const existingTherapist = await Therapist.findById(id);
+  if (!existingTherapist) {
+    return next({
+      cause: 404,
+      message: "المستخدم غير موجود",
+    });
+  }
+
+  // Update the Therapist's fields
+  if (email) {
+    // Check if the email is already used by another user
+    const emailExists = await Therapist.findOne({ email });
+    if (emailExists && emailExists._id.toString() !== id) {
       return next({
-        cause: 404,
-        message: "المستخدم غير موجود",
+        cause: 409,
+        message: "هذا البريد الإلكتروني مستخدم بالفعل",
       });
     }
-  
-    return res.status(200).json({
-      status: "success",
-      success: true,
-      message: "تم استرجاع المستخدم بنجاح",
-      data: {
-        therapist,
-      },
-    });
-  };
-  
-  //& ====================== GET Logged In Therapist  ======================
-  export const getLoggedInTherapist = async (req, res, next) => {
-    const { id } = req.authTherapist;
-    const therapist = await Therapist.findById(id).select("-password -__v");
-  
-    if (!therapist) {
-      return next({
-        cause: 404,
-        message: "المستخدم غير موجود",
-      });
-    }
-  
-    return res.status(200).json({
-      status: "success",
-      success: true,
-      message: "تم استرجاع المستخدم بنجاح",
-      data: {
-        therapist,
-      },
-    });
-  };
-  
-  //& ====================== UPDATE USER ======================
-  export const updateTherapist = async (req, res, next) => {
-    const { id } = req.authTherapist;
-    const {
-      Job_title,
-      full_name,
-      prefix,
-      email,
-      phoneNumber,
+    existingTherapist.email = email;
+  }
+  // Check if the old password is correct
+  if (oldPassword && newPassword) {
+    const isPasswordValid = await bcrypt.compare(
       oldPassword,
-      newPassword,
-      dateOfBirth,
-      description,
-      availabilityForSession,
-      gender,
-      countryOfResidence,
-      fluentLanguages,
-      highEducation,
-      category,
-      specialization,
-      yearsOfExperience,
-      educations,
-      experience,
-      isWorkingInClinic,
-      licenseOrganization,
-      clinicName,
-      licenseNumber,
-      nationality,
-      prices,
-    } = req.body;
-    const existingTherapist = await Therapist.findById(id);
-    if (!existingTherapist) {
+      existingTherapist.password
+    );
+    if (!isPasswordValid) {
       return next({
-        cause: 404,
-        message: "المستخدم غير موجود",
+        cause: 401,
+        message: "كلمة المرور القديمة غير صحيحة",
       });
     }
-  
-    // Update the Therapist's fields
-    if (email) {
-      // Check if the email is already used by another user
-      const emailExists = await Therapist.findOne({ email });
-      if (emailExists && emailExists._id.toString() !== id) {
-        return next({
-          cause: 409,
-          message: "هذا البريد الإلكتروني مستخدم بالفعل",
-        });
-      }
-      existingTherapist.email = email;
-    }
-    // Check if the old password is correct
-    if (oldPassword && newPassword) {
-      const isPasswordValid = await bcrypt.compare(
-        oldPassword,
-        existingTherapist.password
-      );
-      if (!isPasswordValid) {
-        return next({
-          cause: 401,
-          message: "كلمة المرور القديمة غير صحيحة",
-        });
-      }
-      // Hash the new password
-      const hashedPassword = await bcrypt.hash(
-        newPassword,
-        +process.env.SALT_ROUNDS
-      );
-      existingTherapist.password = hashedPassword;
-    }
-    existingTherapist.Job_title = Job_title || existingTherapist.Job_title;
-    existingTherapist.full_name = full_name || existingTherapist.full_name;
-    existingTherapist.prefix = prefix || existingTherapist.prefix;
-    existingTherapist.availabilityForSession =
-      availabilityForSession || existingTherapist.availabilityForSession;
-    existingTherapist.description = description || existingTherapist.description;
-    existingTherapist.phoneNumber = phoneNumber || existingTherapist.phoneNumber;
-    existingTherapist.dateOfBirth = dateOfBirth || existingTherapist.dateOfBirth;
-    existingTherapist.category = category || existingTherapist.category;
-    existingTherapist.clinicName = clinicName || existingTherapist.clinicName;
-    existingTherapist.countryOfResidence =
-      countryOfResidence || existingTherapist.countryOfResidence;
-    existingTherapist.fluentLanguages =
-      fluentLanguages || existingTherapist.fluentLanguages;
-    existingTherapist.highEducation =
-      highEducation || existingTherapist.highEducation;
-    existingTherapist.educations = educations || existingTherapist.educations;
-    existingTherapist.experience = experience || existingTherapist.experience;
-    existingTherapist.isWorkingInClinic =
-      isWorkingInClinic || existingTherapist.isWorkingInClinic;
-    existingTherapist.licenseNumber =
-      licenseNumber || existingTherapist.licenseNumber;
-    existingTherapist.licenseOrganization =
-      licenseOrganization || existingTherapist.licenseOrganization;
-    existingTherapist.nationality = nationality || existingTherapist.nationality;
-    existingTherapist.specialization =
-      specialization || existingTherapist.specialization;
-    existingTherapist.yearsOfExperience =
-      yearsOfExperience || existingTherapist.yearsOfExperience;
-    existingTherapist.prices = prices || existingTherapist.prices;
-    existingTherapist.gender = gender || existingTherapist.gender;
-  
-    // Save the updated Therapist
-    await existingTherapist.save();
-    // Send a response
-    return res.status(200).json({
-      status: "success",
-      success: true,
-      message: "تم تحديث المستخدم بنجاح",
-      data: {
-        therapist: {
-          id: existingTherapist._id,
-          username: existingTherapist.username,
-          email: existingTherapist.email,
-        },
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(
+      newPassword,
+      +process.env.SALT_ROUNDS
+    );
+    existingTherapist.password = hashedPassword;
+  }
+  existingTherapist.Job_title = Job_title || existingTherapist.Job_title;
+  existingTherapist.full_name = full_name || existingTherapist.full_name;
+  existingTherapist.prefix = prefix || existingTherapist.prefix;
+  existingTherapist.availabilityForSession =
+    availabilityForSession || existingTherapist.availabilityForSession;
+  existingTherapist.description = description || existingTherapist.description;
+  existingTherapist.phoneNumber = phoneNumber || existingTherapist.phoneNumber;
+  existingTherapist.dateOfBirth = dateOfBirth || existingTherapist.dateOfBirth;
+  existingTherapist.category = category || existingTherapist.category;
+  existingTherapist.countryOfResidence =
+    countryOfResidence || existingTherapist.countryOfResidence;
+  existingTherapist.fluentLanguages =
+    fluentLanguages || existingTherapist.fluentLanguages;
+  existingTherapist.highEducation =
+    highEducation || existingTherapist.highEducation;
+  existingTherapist.educations = educations || existingTherapist.educations;
+  existingTherapist.experience = experience || existingTherapist.experience;
+  existingTherapist.licenseNumber =
+    licenseNumber || existingTherapist.licenseNumber;
+  existingTherapist.licenseOrganization =
+    licenseOrganization || existingTherapist.licenseOrganization;
+  existingTherapist.nationality = nationality || existingTherapist.nationality;
+  existingTherapist.specialization =
+    specialization || existingTherapist.specialization;
+  existingTherapist.yearsOfExperience =
+    yearsOfExperience || existingTherapist.yearsOfExperience;
+  existingTherapist.prices = prices || existingTherapist.prices;
+  existingTherapist.gender = gender || existingTherapist.gender;
+
+  // Save the updated Therapist
+  await existingTherapist.save();
+  // Send a response
+  return res.status(200).json({
+    status: "success",
+    success: true,
+    message: "تم تحديث المستخدم بنجاح",
+    data: {
+      therapist: {
+        id: existingTherapist._id,
+        username: existingTherapist.username,
+        email: existingTherapist.email,
       },
-    });
-  };
-
-
+    },
+  });
+};
 
 //& ====================== VERIFY EMAIL ======================
 export const verifyEmail = async (req, res, next) => {
@@ -583,16 +618,20 @@ export const signIn = async (req, res, next) => {
 
 //& ====================== verifyResetToken ======================
 export const verifyResetToken = async (req, res, next) => {
-    // 1- get the reset code from the request body
-    const { token } = req.query;
+  // 1- get the reset code from the request body
+  const { token } = req.query;
 
-    // 2- Find the user by email
-    const user = await Therapist.findOne({
-        resetPasswordToken: token,
-        resetPasswordTokenExpires: { $gt: Date.now() }, // Check expiry
-      });
-    if (!user) return next({ message: " لقد انتهت مدة التغيير يمكنك ارسال رمز التغيير مرة اخرى", cause: 404 });
-    return res.status(200).json({success: true, message: "Token is valid"});
+  // 2- Find the user by email
+  const user = await Therapist.findOne({
+    resetPasswordToken: token,
+    resetPasswordTokenExpires: { $gt: Date.now() }, // Check expiry
+  });
+  if (!user)
+    return next({
+      message: " لقد انتهت مدة التغيير يمكنك ارسال رمز التغيير مرة اخرى",
+      cause: 404,
+    });
+  return res.status(200).json({ success: true, message: "Token is valid" });
 };
 //& ====================== FORGOT PASSWORD ======================
 export const forgotPassword = async (req, res, next) => {
@@ -618,9 +657,9 @@ export const forgotPassword = async (req, res, next) => {
   // Send a reset password email
   const isEmailSent = await sendEmailService({
     to: email,
-    subject: "Reset Password",
-    message: verificationEmailTemplate(
-      existingTherapist.username,
+    subject: "هل نسيت كلمة المرور؟ ولا يهمك",
+    message: forgotPasswordTemplate(
+      existingUser.full_name,
       `${process.env.THERAPIST_URL}/resetPassword/${resetPasswordToken}`
     ),
   });
@@ -671,6 +710,13 @@ export const resetPassword = async (req, res, next) => {
   existingTherapist.resetPasswordToken = undefined;
   existingTherapist.resetPasswordTokenExpires = undefined;
   await existingTherapist.save();
+
+  const isEmailSent = await sendEmailService({
+    to: existingTherapist.email,
+    subject: "تم تحديث كلمة المرور الخاصة بك",
+    message: resetPasswordTemplate(existingUser.full_name),
+  });
+  if (!isEmailSent) return next({ message: "Email is not sent", cause: 500 });
   // Send a response
   return res.status(200).json({
     status: "success",
@@ -678,10 +724,6 @@ export const resetPassword = async (req, res, next) => {
     message: "تم إعادة تعيين كلمة المرور بنجاح",
   });
 };
-
-
-
-
 
 //& ====================== DELETE Therapist ======================
 export const deleteTherapist = async (req, res, next) => {

@@ -2,9 +2,10 @@ import PaymentWallet from "../../../DB/Models/paymentWallet.model.js";
 import Session from "../../../DB/Models/session.model.js";
 import Therapist from "../../../DB/Models/therapist.model.js";
 import sendEmailService from "../../services/send-email.services.js";
-import { sendApprovalPaymentWallet, sendApprovalPaymentWalletForCourse, sendRejectPaymentWallet, sendRejectPaymentWalletForCourse } from "./utils/paymentWallet.handler.js";
+import { sendApprovalPaymentWallet, sendApprovalPaymentWalletForCourse, sendApprovalPaymentWalletForLiveCourse, sendRejectPaymentWallet, sendRejectPaymentWalletForCourse, sendRejectPaymentWalletForLiveCourse } from "./utils/paymentWallet.handler.js";
 import Course from '../../../DB/Models/course.model.js';
 import LiveCourse from "../../../DB/Models/liveCourse.model.js";
+import { APIFeatures } from "../../utils/api-feature.js";
 
 //Done
 export const createPaymentWallet = async (req, res, next) => {
@@ -45,18 +46,28 @@ export const createPaymentWallet = async (req, res, next) => {
 //Done
 //& ==================== get all paymentWallets =========================
 export const getAllPaymentWallets = async (req, res, next) => {
-    const paymentWallets = await PaymentWallet.find({
+     const {page, size, ...search} = req.query;
+      if(!page) page = 1;
+      const feature = new APIFeatures(req.query, PaymentWallet.find({
         status: "pending",
-    }).populate("sessionId").populate("userId").populate("therapistId");
+    }).populate("sessionId").populate("userId").populate("therapistId"));
+      feature.pagination({page, size});
+      feature.search(search);
+      const paymentWallets = await feature.mongooseQuery;
     if (!paymentWallets) {
         return next({
             cause: 400,
             message: "فشل استرجاع محفظة الدفع",
         });
     }
+    const queryFilter = {};
+    if(search.account) queryFilter.account = { $regex: search.account, $options: 'i' };
+    queryFilter.status = "pending";
+    const numberOfPages = Math.ceil(await PaymentWallet.countDocuments(queryFilter) / (size ? size : 10) )
     return res.status(200).json({
         message: "تم استرجاع محفظة الدفع بنجاح",
         data: paymentWallets,
+        numberOfPages
     });
 };
 
@@ -64,7 +75,7 @@ export const getAllPaymentWallets = async (req, res, next) => {
 //& ==================== approve paymentWallet by id =========================
 export const approvePaymentWallet = async (req, res, next) => {
     const { id } = req.params;
-    const paymentWallet = await PaymentWallet.findById(id).populate("userId").populate("therapistId").populate("courseId");
+    const paymentWallet = await PaymentWallet.findById(id).populate("userId").populate("therapistId").populate("courseId"). populate("liveCourseId").populate("liveCourseId");
     if (!paymentWallet) {
         return next({
             cause: 400,
@@ -128,19 +139,6 @@ export const approvePaymentWallet = async (req, res, next) => {
                 message: isMailsSent.message,
             });
         }
-        // const therapist = await Therapist.findById(paymentWallet.therapistId._id);
-        // if (!therapist) {
-        //     return next({
-        //         cause: 400,
-        //         message: "فشل استرجاع المعالج",
-        //     });
-        // }
-        // if(paymentWallet.currency === "EGP") {
-        //     therapist.walletEgp += paymentWallet.amount * Number(process.env.THERAPIST_RATE_COURSE);
-        // } else if(paymentWallet.currency === "USD") {
-        //     therapist.walletUsd += paymentWallet.amount * Number(process.env.THERAPIST_RATE_COURSE);
-        // }
-        // await therapist.save();
     }
     // approve the payment wallet for liveCourses
     if(paymentWallet.type === "liveCourse") {
@@ -157,6 +155,15 @@ export const approvePaymentWallet = async (req, res, next) => {
             return next({
                 message: "انت بالفعل مشترك في هذه الدورة",
                 cause: 400,
+            });
+        }
+        const isMailsSent = await sendApprovalPaymentWalletForLiveCourse({
+            paymentWallet,
+        });
+        if(!isMailsSent.status){
+            return next({
+                cause: 400,
+                message: isMailsSent.message,
             });
         }
         liveCourse.enrolledUsers.push(paymentWallet.userId);
@@ -178,7 +185,7 @@ export const approvePaymentWallet = async (req, res, next) => {
 //& ==================== reject paymentWallet by id =========================
 export const rejectPaymentWallet = async (req, res, next) => {
     const { id } = req.params;
-    const paymentWallet = await PaymentWallet.findById(id).populate("userId").populate("courseId");
+    const paymentWallet = await PaymentWallet.findById(id).populate("userId").populate("courseId").populate("liveCourseId");
     if (!paymentWallet) {
         return next({
             cause: 400,
@@ -235,6 +242,24 @@ export const rejectPaymentWallet = async (req, res, next) => {
             });
         }
         const sendRejectPaymentWallet = await sendRejectPaymentWalletForCourse({paymentWallet});
+        if(!sendRejectPaymentWallet.status){
+            return next({
+                cause: 400,
+                message: sendRejectPaymentWallet.message,
+            });
+        }
+    }
+
+    // reject the payment wallet for liveCourses
+    if(paymentWallet.type === "liveCourse") {
+        const liveCourse = await LiveCourse.findById(paymentWallet.liveCourseId);
+        if (!liveCourse) {
+            return next({
+                cause: 400,
+                message: "فشل استرجاع الدورة",
+            });
+        }
+        const sendRejectPaymentWallet = await sendRejectPaymentWalletForLiveCourse({paymentWallet});
         if(!sendRejectPaymentWallet.status){
             return next({
                 cause: 400,

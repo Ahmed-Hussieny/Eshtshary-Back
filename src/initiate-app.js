@@ -21,6 +21,7 @@ export const initiateApp = ({ app, express }) => {
     app.use('/api/v1/order', routers.orderRouter);
     app.use('/api/v1/article', routers.articleRouter);
     app.use('/api/v1/live-course', routers.liveCourseRouter);
+    app.use('/api/v1/transfer-request', routers.transferRequestRouter);
     
     app.use('/uploads/Therapists', express.static('uploads/Therapists'));
     app.use('/uploads/PaymentWallets', express.static('uploads/PaymentWallets'));
@@ -34,7 +35,7 @@ export const initiateApp = ({ app, express }) => {
         next({ message: "Route not found", status: 404 });
     });
 
-    // cronToCheckSubscription();
+    cronToCheckSubscription();
     app.use(globalResponse, rollbackUploadedFiles, rollBackSavedDocument);
 
 };

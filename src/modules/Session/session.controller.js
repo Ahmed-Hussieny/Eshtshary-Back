@@ -3,9 +3,13 @@ import Session from "../../../DB/Models/session.model.js";
 import Therapist from "../../../DB/Models/therapist.model.js";
 import User from "../../../DB/Models/user.model.js";
 import { createCharge } from "../../services/tapPayment.js";
-import { createSessions, handelCreatePaymentWallet, isRequestedSlotsAvailable, sendEmailToUser } from "./utils/session.handler.js";
+import { createSessions,handelCreatePaymentWallet,isRequestedSlotsAvailable,sendEmailToUser} from "./utils/session.handler.js";
 import sendEmailService from "../../services/send-email.services.js";
 import Rate from "../../../DB/Models/rate.mode.js";
+import { APIFeatures } from "../../utils/api-feature.js";
+import { rateEmailTemplate } from "../../utils/templates/rateMail.js";
+import { prePaymentSessionTemplate } from "../../utils/templates/prePaymentSession.js";
+import { acceptPaymentSessionTemplate } from "../../utils/templates/payment.js";
 
 //& ================== CREATE SESSION ==================
 export const createSession = async (req, res, next) => {
@@ -48,7 +52,12 @@ export const createSession = async (req, res, next) => {
     });
   }
 
-  const sessions = await createSessions(therapist, userId, requestedSlots, currency);
+  const sessions = await createSessions(
+    therapist,
+    userId,
+    requestedSlots,
+    currency
+  );
   if (!sessions || sessions.length === 0) {
     return next({ message: "No sessions created", cause: 400 });
   }
@@ -76,15 +85,21 @@ export const createSession = async (req, res, next) => {
     return next({ message: "User not found", cause: 404 });
   }
 
-  const isEmailSentClient = await sendEmailToUser(user, sessions, therapist);
-
-  if (!isEmailSentClient.status) {
-    return next({
-      message: isEmailSentClient.message,
-      cause: 400,
-    });
+  const emailSubject = `استلمنا طلب الدفع – في انتظار التأكيد`;
+  const isEmailSentClient = await sendEmailService({
+    to: user.email,
+    subject: emailSubject,
+    message: prePaymentSessionTemplate(
+      user.username,
+      "جلسة علاجية مع " + therapist.full_name
+    ),
+  });
+  if (!isEmailSentClient) {
+    return {
+      status: false,
+      message: "Email failed to send, but session was created",
+    };
   }
-
   return res.status(201).json({
     success: true,
     message: "تم انشاء الجلسات بنجاح الرجاء الانتظار حتي يتم قبولها",
@@ -133,7 +148,6 @@ export const createSessionWithCard = async (req, res, next) => {
       requestedSlots: JSON.stringify(requestedSlots),
       currency,
       amount,
-
     },
     redirect: {
       url: `${process.env.CLIENT_URL}/profile`,
@@ -152,6 +166,7 @@ export const createSessionWithCard = async (req, res, next) => {
   });
 };
 
+//& ================== WEBHOOK HANDLER ==================
 export const webhookHandler = async (req, res) => {
   const { metadata, status, id } = req.body;
 
@@ -165,7 +180,7 @@ export const webhookHandler = async (req, res) => {
         url: `${process.env.TAP_URL}/charges/${id}`,
         headers: {
           accept: "application/json",
-          Authorization:  `Bearer ${process.env.TAP_SECRET_KEY}`,
+          Authorization: `Bearer ${process.env.TAP_SECRET_KEY}`,
         },
       };
       const response = await axios.request(options);
@@ -193,12 +208,14 @@ export const webhookHandler = async (req, res) => {
           paymentMethod: "card",
           transactionImageUrl: null,
           sessions,
-          statusCompleted:true
+          statusCompleted: true,
         };
 
         const paymentWallet = await handelCreatePaymentWallet(paymentObject);
         if (!paymentWallet) {
-          return res.status(400).json({ message: "Payment wallet not created" });
+          return res
+            .status(400)
+            .json({ message: "Payment wallet not created" });
         }
 
         // Send emails
@@ -206,26 +223,38 @@ export const webhookHandler = async (req, res) => {
         const therapist = await Therapist.findById(therapistId);
 
         if (!user || !therapist) {
-          return res.status(404).json({ message: "User or therapist not found" });
+          return res
+            .status(404)
+            .json({ message: "User or therapist not found" });
         }
 
-        const isEmailSentClient = await sendEmailToUser(user, sessions, therapist);
-        if (!isEmailSentClient.status) {
-          return res.status(400).json({ message: isEmailSentClient.message });
+        const emailSubject = `دفعك تم بنجاح – خلينا نبدأ!`;
+        const isEmailSentClient = await sendEmailService({
+            to: user.email,
+            subject: emailSubject,
+            message: acceptPaymentSessionTemplate(user.username, therapist.full_name, sessions),
+        });
+        if(!isEmailSentClient) {
+            return {
+                status: false,
+                message: "Email failed to send, but session was created"
+            }
         }
-        if(currency === "EGP") {
-            therapist.walletEgp += amount * Number(process.env.THERAPIST_RATE_SESSION);
-        } else if(currency === "USD") {
-            therapist.walletUsd += amount * Number(process.env.THERAPIST_RATE_SESSION);
+        if (currency === "EGP") {
+          therapist.walletEgp +=
+            amount * Number(process.env.THERAPIST_RATE_SESSION);
+        } else if (currency === "USD") {
+          therapist.walletUsd +=
+            amount * Number(process.env.THERAPIST_RATE_SESSION);
         }
         await therapist.save();
         return res.status(200).json({
           message: "Payment verified, sessions created, and emails sent",
           sessions,
-          paymentWallet
+          paymentWallet,
         });
       }
-        
+
       return res.status(400).json({ message: "Payment not captured" });
     } catch (error) {
       return res.status(500).json({ message: "Error processing webhook" });
@@ -234,7 +263,7 @@ export const webhookHandler = async (req, res) => {
 
   return res.status(200).json({
     message: "Webhook received successfully",
-    status
+    status,
   });
 };
 
@@ -260,8 +289,10 @@ export const getUserSessions = async (req, res, next) => {
 export const getTherapistSessions = async (req, res, next) => {
   const { _id: therapistId } = req.authTherapist;
   console.log(therapistId);
-  const sessions = await Session.find({ therapistId , 
-    status: { $in: ["scheduled", "completed"] } })
+  const sessions = await Session.find({
+    therapistId,
+    status: { $in: ["scheduled", "completed"] },
+  })
     .populate("userId", "username email")
     .sort({ date: -1 });
 
@@ -351,9 +382,7 @@ export const markSessionAsCompleted = async (req, res, next) => {
     return next({ message: "Session ID is required", cause: 400 });
   }
 
-  const session = await Session.findById(
-    sessionId
-  );
+  const session = await Session.findById(sessionId);
   if (!session) {
     return next({ message: "Session not found", cause: 404 });
   }
@@ -361,7 +390,7 @@ export const markSessionAsCompleted = async (req, res, next) => {
   // check if session data is today or past
   const currentDate = new Date();
   const sessionDate = new Date(session.date);
-  
+
   if (sessionDate > currentDate) {
     console.log("Session date is in the future");
     return next({ message: "هذا التاريخ في المستقبل", cause: 400 });
@@ -374,10 +403,12 @@ export const markSessionAsCompleted = async (req, res, next) => {
     return next({ message: "Therapist not found", cause: 404 });
   }
   therapist.numberOfSessions += 1;
-  if(session.currency === "EGP") {
-    therapist.walletEgp += session.amount * Number(process.env.THERAPIST_RATE_SESSION);
-  } else if(session.currency === "USD") {
-    therapist.walletUsd += session.amount * Number(process.env.THERAPIST_RATE_SESSION);
+  if (session.currency === "EGP") {
+    therapist.walletEgp +=
+      session.amount * Number(process.env.THERAPIST_RATE_SESSION);
+  } else if (session.currency === "USD") {
+    therapist.walletUsd +=
+      session.amount * Number(process.env.THERAPIST_RATE_SESSION);
   }
   await therapist.save();
   // send mail to user to make rate
@@ -386,26 +417,18 @@ export const markSessionAsCompleted = async (req, res, next) => {
     return next({ message: "User not found", cause: 404 });
   }
   const emailSubject = "تم انهاء الجلسة بنجاح";
-  const emailMessage = `
-  مرحبا ${user.username} ،
-  نود إبلاغك بأنه تم إنهاء جلستك مع المعالج ${therapist.full_name} بنجاح.
-  يمكنك الآن تقييم الجلسة ومشاركة تجربتك معنا.
-  توفر لك الفرصة لتقديم تقييمك من خلال الرابط التالي:
-  ${process.env.CLIENT_URL}/rate-session/${session._id}
-  إذا كان لديك أي استفسارات أو تحتاج إلى مساعدة إضافية، فلا تتردد في التواصل معنا.
-  نحن هنا لدعمك في رحلتك نحو الصحة النفسية والعافية.
-  نقدر ثقتك بنا ونتطلع إلى مساعدتك في المستقبل.
-  شكرا لك على اختيارنا.
-  `;
-    const isEmailSentClient = await sendEmailService({
-        to: user.email,
-        subject: emailSubject,
-        message: emailMessage
-    });
-    console.log("Email sent to user:", isEmailSentClient);
-    if(!isEmailSentClient) {
-        console.error('Email failed to send, but session was created');
-    }
+  const isEmailSentClient = await sendEmailService({
+    to: user.email,
+    subject: emailSubject,
+    message: rateEmailTemplate(
+      user.username,
+      `${process.env.CLIENT_URL}/rate-session/${session._id}`
+    ),
+  });
+  console.log("Email sent to user:", isEmailSentClient);
+  if (!isEmailSentClient) {
+    console.error("Email failed to send, but session was created");
+  }
 
   return res.status(200).json({
     success: true,
@@ -422,7 +445,9 @@ export const rateSession = async (req, res, next) => {
     return next({ message: "Session ID is required", cause: 400 });
   }
 
-  const session = await Session.findById(sessionId).populate("userId therapistId");
+  const session = await Session.findById(sessionId).populate(
+    "userId therapistId"
+  );
   if (!session) {
     return next({ message: "Session not found", cause: 404 });
   }
@@ -432,7 +457,7 @@ export const rateSession = async (req, res, next) => {
     sessionId: session._id,
     userId: session.userId._id,
     sessionId: session._id,
-  }); 
+  });
   if (existingRating) {
     return next({ message: "You have already rated this session", cause: 400 });
   }
@@ -466,7 +491,7 @@ export const rateSession = async (req, res, next) => {
     numberOfTherapistRates
   ).toFixed(2);
   await therapist.save();
-  
+
   return res.status(200).json({
     success: true,
     message: "Session rated successfully",
@@ -476,18 +501,26 @@ export const rateSession = async (req, res, next) => {
 
 //& ================== GET RATES ==================
 export const getRates = async (req, res, next) => {
-  const rates = await Rate.find()
-    .populate("userId", "username email")
-    .populate("therapistId", "full_name");
-
-  if (!rates || rates.length === 0) {
-    return next({ message: "No rates found for this session", cause: 404 });
-  }
+  let { page, size } = req.query;
+  console.log("Query params:", req.query);
+  if (!page) page = 1;
+  const feature = new APIFeatures(
+    req.query,
+    Rate.find()
+      .populate("userId", "username email")
+      .populate("therapistId", "full_name")
+  );
+  feature.pagination({ page, size });
+  const rates = await feature.mongooseQuery;
+  const numberOfPages = Math.ceil(
+    (await Rate.countDocuments()) / (size ? size : 10)
+  );
 
   return res.status(200).json({
     success: true,
     message: "Rates retrieved successfully",
     rates,
+    numberOfPages,
   });
 };
 
@@ -496,10 +529,6 @@ export const getShowRates = async (req, res, next) => {
   const rates = await Rate.find({ status: "show" })
     .populate("userId", "username email")
     .populate("therapistId", "full_name");
-
-  if (!rates || rates.length === 0) {
-    return next({ message: "No rates found for this session", cause: 404 });
-  }
 
   return res.status(200).json({
     success: true,
@@ -527,7 +556,7 @@ export const updateRate = async (req, res, next) => {
   if (status && !["no-show", "show"].includes(status)) {
     return next({ message: "Invalid status", cause: 400 });
   }
-  
+
   await rate.save();
 
   return res.status(200).json({
@@ -553,5 +582,29 @@ export const deleteRate = async (req, res, next) => {
     success: true,
     message: "Rate deleted successfully",
     rate,
+  });
+};
+
+//& ================== ANSWER SESSION QUESTIONS ==================
+export const answerSessionQuestions = async (req, res, next) => {
+  const { sessionId } = req.params;
+  const { username, typeOfSession, lastDate, challenges } = req.body;
+
+  const session = await Session.findById(sessionId);
+  if (!session) {
+    return next({ message: "Session not found", cause: 404 });
+  }
+  if (session.status !== "scheduled") {
+    return next({ message: "هذه الجلسة ليست في حالة مجدولة", cause: 400 });
+  }
+  session.username = username || session.username;
+  session.typeOfSession = typeOfSession || session.typeOfSession;
+  session.lastDate = lastDate || session.lastDate;
+  session.challenges = challenges || session.challenges;
+  await session.save();
+  return res.status(200).json({
+    success: true,
+    message: "تم تحديث بيانات الجلسة بنجاح",
+    session,
   });
 };

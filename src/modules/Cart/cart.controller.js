@@ -76,9 +76,6 @@ export const getCart = async (req, res, next) => {
     const {_id:userId} = req.authUser;
     // check if user has cart
     const userCart = await getUserCart(userId);
-    if(!userCart){
-        return next({message: 'Cart not found', cause: 404});
-    }
     // return user cart
     return res.status(200).json({
         success: true,

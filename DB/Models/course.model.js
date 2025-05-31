@@ -13,9 +13,9 @@ const courseSchema = new Schema(
       type: String,
       required: [true, "Please add a description"],
     },
-    therapistId: {
+    addedBy: {
       type: mongoose.Schema.ObjectId,
-      ref: systemRoles.THERAPIST,
+      ref: "Auth",
       required: true,
     },
     priceUSD: {

@@ -18,6 +18,11 @@ const testSchema = new Schema({
         to: { type: Number, required: true },
         description: { type: String, required: true },
     }],
+    usersData: [{
+        name: { type: String, required: true },
+        email: { type: String, required: true },
+        whatsapp: { type: String, required: true },
+    }],
     totalPoints: { type: Number, required: true },
 },{
     timestamps: true

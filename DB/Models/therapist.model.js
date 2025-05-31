@@ -79,10 +79,10 @@ const therapistSchema = new Schema({
         type: Number,
         default: 0,
     },
-    category: {
+    category: [{
         type: String,
         required: true,
-    },
+    }],
     specialization: [{
         type: String,
         required: true,
@@ -170,13 +170,6 @@ const therapistSchema = new Schema({
     },
     licenseOrganization: {
         type: Date,
-    },
-    isWorkingInClinic:{
-        type: Boolean,
-        default: false,
-    },
-    clinicName:{
-        type: String,
     },
     availabilityForSession:{
         type: String,

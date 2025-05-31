@@ -11,6 +11,7 @@ import cartRouter from './Cart/cart.routes.js';
 import orderRouter from './Order/order.routes.js';
 import articleRouter from './Article/article.routes.js';
 import liveCourseRouter from './LiveCourse/liveCourse.routes.js';
+import transferRequestRouter from './TransferRequest/transferRequest.routes.js';
 export {
     authRouter,
     therapistRouter,
@@ -24,5 +25,6 @@ export {
     cartRouter,
     orderRouter,
     articleRouter,
-    liveCourseRouter
+    liveCourseRouter,
+    transferRequestRouter
 }

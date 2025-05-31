@@ -6,13 +6,18 @@ config();
 
 class ZoomService {
   constructor() {
-    this.validateEnvVars();
-    this.clientId = process.env.ZOOM_CLIENT_ID;
-    this.clientSecret = process.env.ZOOM_CLIENT_SECRET;
-    this.accountId = process.env.ZOOM_ACCOUNT_ID;
+    try {
+      this.validateEnvVars();
+      this.clientId = process.env.ZOOM_CLIENT_ID;
+      this.clientSecret = process.env.ZOOM_CLIENT_SECRET;
+      this.accountId = process.env.ZOOM_ACCOUNT_ID;
 
-    this.accessToken = null;
-    this.tokenExpiration = null;
+      this.accessToken = null;
+      this.tokenExpiration = null;
+    } catch (err) {
+      console.error('🚨 ZoomService initialization error:', err.message);
+      this.disabled = true; // Prevent execution
+    }
   }
 
   validateEnvVars() {
@@ -26,105 +31,96 @@ class ZoomService {
     console.log('✅ Zoom Service initialized with environment variables');
   }
 
-async testZoomConnectivity() {
-  try {
-    // Try with a longer timeout and simpler request
-    await axios.get('https://zoom.us/health', {
-      timeout: 10000,
-      httpsAgent: new https.Agent({ 
-        rejectUnauthorized: false, // Temporarily for testing
-        keepAlive: true
-      })
-    });
-    console.log('🌐 Zoom is reachable');
-    return true;
-  } catch (error) {
-    console.warn('Primary connectivity test failed, trying alternative...');
-    
-    // Try a more basic endpoint
+  async testZoomConnectivity() {
     try {
-      await axios.head('https://zoom.us', { timeout: 10000 });
-      return true;
-    } catch (fallbackError) {
-      console.error('All connectivity tests failed:', {
-        primaryError: error.message,
-        fallbackError: fallbackError.message
+      await axios.get('https://zoom.us/health', {
+        timeout: 10000,
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: false,
+          keepAlive: true
+        })
       });
-      throw new Error('🌐 Cannot reach Zoom servers. Check your internet or DNS settings.');
-    }
-  }
-}
-
- async getAccessToken() {
-  try {
-    await this.testZoomConnectivity();
-
-    const authString = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
-
-    const params = new URLSearchParams({
-      grant_type: 'account_credentials',
-      account_id: this.accountId
-    });
-
-    console.log('Requesting token with:', {
-      clientId: this.clientId,
-      accountId: this.accountId,
-      base64Auth: authString.substring(0, 10) + '...' // log partial for security
-    });
-
-    const response = await axios.post(
-      'https://zoom.us/oauth/token',
-      params.toString(),
-      {
-        headers: {
-          Authorization: `Basic ${authString}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        timeout: 5000,
-        httpsAgent: new https.Agent({ keepAlive: true })
+      console.log('🌐 Zoom is reachable');
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Primary connectivity test failed:', error.message);
+      try {
+        await axios.head('https://zoom.us', { timeout: 10000 });
+        console.log('🌐 Zoom reachable via fallback');
+        return true;
+      } catch (fallbackError) {
+        console.error('❌ All Zoom connectivity tests failed:', {
+          primary: error.message,
+          fallback: fallbackError.message
+        });
+        return false;
       }
-    );
-
-    console.log('Token response:', {
-      status: response.status,
-      data: response.data
-    });
-
-    if (!response.data.access_token) {
-      throw new Error('Zoom API returned no access token');
     }
-
-    this.accessToken = response.data.access_token;
-    this.tokenExpiration = Date.now() + response.data.expires_in * 1000;
-
-    console.log('🔑 Zoom access token retrieved');
-    return this.accessToken;
-  } catch (error) {
-    console.error('Full error details:', {
-      message: error.message,
-      code: error.code,
-      response: {
-        status: error.response?.status,
-        data: error.response?.data,
-        headers: error.response?.headers
-      },
-      stack: error.stack
-    });
-    const msg = error.response?.data?.error || error.message;
-    throw new Error('Authentication failed: ' + msg);
   }
-}
+
+  async getAccessToken() {
+    if (this.disabled) return null;
+
+    try {
+      const canReachZoom = await this.testZoomConnectivity();
+      if (!canReachZoom) return null;
+
+      const authString = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
+      const params = new URLSearchParams({
+        grant_type: 'account_credentials',
+        account_id: this.accountId
+      });
+
+      const response = await axios.post(
+        'https://zoom.us/oauth/token',
+        params.toString(),
+        {
+          headers: {
+            Authorization: `Basic ${authString}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          timeout: 10000,
+          httpsAgent: new https.Agent({ keepAlive: true })
+        }
+      );
+
+      if (!response.data.access_token) {
+        console.error('❌ Zoom API returned no access token');
+        return null;
+      }
+
+      this.accessToken = response.data.access_token;
+      this.tokenExpiration = Date.now() + response.data.expires_in * 1000;
+
+      console.log('🔑 Zoom access token retrieved');
+      return this.accessToken;
+    } catch (error) {
+      console.error('❌ Zoom token error:', {
+        message: error.message,
+        response: error.response?.data,
+        stack: error.stack
+      });
+      return null;
+    }
+  }
 
   async ensureValidToken() {
+    if (this.disabled) return false;
+
     const aboutToExpire = this.tokenExpiration && Date.now() >= this.tokenExpiration - 60000;
     if (!this.accessToken || aboutToExpire) {
-      await this.getAccessToken();
+      const token = await this.getAccessToken();
+      return !!token;
     }
+    return true;
   }
 
   async createMeeting(meetingData = {}) {
+    if (this.disabled) return { success: false, message: 'ZoomService is disabled' };
+
     try {
-      await this.ensureValidToken();
+      const valid = await this.ensureValidToken();
+      if (!valid) throw new Error('Invalid or missing Zoom access token');
 
       const payload = {
         topic: 'Zoom Meeting',
@@ -165,15 +161,17 @@ async testZoomConnectivity() {
         return this.createMeeting(meetingData);
       }
 
-      const msg = error.response?.data?.message || error.message;
-      console.error('❌ Create Meeting Error:', msg);
-      throw new Error(`Failed to create meeting: ${msg}`);
+      console.error('❌ Create Meeting Error:', error.message);
+      return { success: false, message: error.message };
     }
   }
 
   async getMeeting(meetingId) {
+    if (this.disabled) return null;
+
     try {
-      await this.ensureValidToken();
+      const valid = await this.ensureValidToken();
+      if (!valid) return null;
 
       const response = await axios.get(
         `https://api.zoom.us/v2/meetings/${meetingId}`,
@@ -185,15 +183,17 @@ async testZoomConnectivity() {
 
       return response.data;
     } catch (error) {
-      const msg = error.response?.data?.message || error.message;
-      console.error('❌ Get Meeting Error:', msg);
-      throw new Error(`Failed to get meeting: ${msg}`);
+      console.error('❌ Get Meeting Error:', error.message);
+      return null;
     }
   }
 
   async updateMeeting(meetingId, updateData) {
+    if (this.disabled) return null;
+
     try {
-      await this.ensureValidToken();
+      const valid = await this.ensureValidToken();
+      if (!valid) return null;
 
       const response = await axios.patch(
         `https://api.zoom.us/v2/meetings/${meetingId}`,
@@ -209,15 +209,17 @@ async testZoomConnectivity() {
 
       return response.data;
     } catch (error) {
-      const msg = error.response?.data?.message || error.message;
-      console.error('❌ Update Meeting Error:', msg);
-      throw new Error(`Failed to update meeting: ${msg}`);
+      console.error('❌ Update Meeting Error:', error.message);
+      return null;
     }
   }
 
   async deleteMeeting(meetingId) {
+    if (this.disabled) return { success: false };
+
     try {
-      await this.ensureValidToken();
+      const valid = await this.ensureValidToken();
+      if (!valid) return { success: false };
 
       await axios.delete(
         `https://api.zoom.us/v2/meetings/${meetingId}`,
@@ -229,9 +231,8 @@ async testZoomConnectivity() {
 
       return { success: true };
     } catch (error) {
-      const msg = error.response?.data?.message || error.message;
-      console.error('❌ Delete Meeting Error:', msg);
-      throw new Error(`Failed to delete meeting: ${msg}`);
+      console.error('❌ Delete Meeting Error:', error.message);
+      return { success: false };
     }
   }
 }

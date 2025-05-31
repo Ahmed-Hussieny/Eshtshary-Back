@@ -73,4 +73,9 @@ sessionRouter.delete(
   auth([systemRoles.ADMIN]),
   expressasyncHandler(sessionController.deleteRate)
 );
+
+sessionRouter.post(
+  "/answerSessionQuestions/:sessionId",
+  expressasyncHandler(sessionController.answerSessionQuestions)
+)
 export default sessionRouter;

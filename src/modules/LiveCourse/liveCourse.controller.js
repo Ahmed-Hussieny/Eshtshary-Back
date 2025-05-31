@@ -4,6 +4,8 @@ import PaymentWallet from "../../../DB/Models/paymentWallet.model.js";
 import User from "../../../DB/Models/user.model.js";
 import { createCharge } from "../../services/tapPayment.js";
 import sendEmailService from "../../services/send-email.services.js";
+import { APIFeatures } from "../../utils/api-feature.js";
+import { prePaymentSessionTemplate } from "../../utils/templates/prePaymentSession.js";
 
 //& ====================== ADD LIVE COURSE ====================== &//
 export const addLiveCourse = async (req, res, next) => {
@@ -25,7 +27,9 @@ export const addLiveCourse = async (req, res, next) => {
             description: session.description,
             date: new Date(session.date),
             time: session.time,
-            link: session.link || "", // Optional link
+            link: session.link || "",
+            is24HourReminderSent: false,
+            is1HourReminderSent: false,
         })),
         image: req.files?.image ? `${process.env.SERVER_URL}/uploads/LiveCourses/${req.files.image[0].filename}` : "",
         priceEGP,
@@ -47,11 +51,22 @@ export const addLiveCourse = async (req, res, next) => {
 
 //& ====================== GET LIVE COURSES ====================== &//
 export const getLiveCourses = async (req, res, next) => {
-    const liveCourses = await LiveCourse.find().sort({ createdAt: -1 });
-        return res.status(200).json({
+    let {page, size, ...search} = req.query;
+    console.log(page, size, search)
+    if(!page) page = 1;
+    const feature = new APIFeatures(req.query, LiveCourse.find().sort({ createdAt: -1 }));
+    feature.pagination({page, size});
+    feature.search(search);
+    const liveCourses = await feature.mongooseQuery;
+    const queryFilter = {};
+    if(search.title) queryFilter.title = { $regex: search.title, $options: 'i' };
+    const numberOfPages = Math.ceil(await LiveCourse.countDocuments(queryFilter) / (size ? size : 10) )
+    
+    return res.status(200).json({
             success: true,
             message: "Live courses retrieved successfully",
             liveCourses,
+            numberOfPages
         });
 };
 //& ====================== GET LIVE COURSE BY ID ====================== &//
@@ -125,6 +140,23 @@ export const enrollInLiveCourse = async (req, res, next) => {
     });
     if(!paymentWallet) {
         return next({ message: "فشل الدفع", status: 400 });
+    }
+
+    const user = await User.findById(userId);
+    if(!user){
+        return next({ message:"هذا المستخدم غير موجود",cause: 400 })
+    }
+    const emailSubject = `استلمنا طلب الدفع – في انتظار التأكيد`;
+    const isEmailSentClient = await sendEmailService({
+        to: user.email,
+        subject: emailSubject,
+        message: prePaymentSessionTemplate(user.username, "دورة مباشرة " + liveCourse.title),
+    });
+    if(!isEmailSentClient) {
+        return {
+            status: false,
+            message: "Email failed to send, but session was created"
+        }
     }
 
     return res.status(200).json({
