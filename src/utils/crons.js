@@ -1,11 +1,16 @@
 import { scheduleJob } from "node-schedule";
-import moment from "moment";
+import moment from "moment-timezone";
 import Session from "../../DB/Models/session.model.js";
 import sendEmailService from "../services/send-email.services.js";
 import ZoomService from "../services/zoom.js";
 import LiveCourse from "../../DB/Models/liveCourse.model.js";
 import User from "../../DB/Models/user.model.js";
-import { reminder1SessionTemplate, reminder1SessionTemplateTherapist, reminder24SessionTemplate, reminder24SessionTemplateTherapist } from "./templates/remiderSession.js";
+import {
+  reminder1SessionTemplate,
+  reminder1SessionTemplateTherapist,
+  reminder24SessionTemplate,
+  reminder24SessionTemplateTherapist,
+} from "./templates/remiderSession.js";
 
 export async function cronToCheckSubscription() {
   try {
@@ -15,7 +20,7 @@ export async function cronToCheckSubscription() {
     //~ Runs every hour at minute 0
     scheduleJob("* * * * *", async () => {
       console.log("Checking sessions...");
-      const now = moment();
+      const now = moment().tz("Africa/Cairo");
 
       const sessions = await Session.find({
         status: "scheduled",
@@ -60,7 +65,7 @@ export async function cronToCheckSubscription() {
         course.sessions.forEach(async (session) => {
           const [startHour, startMinute] = session.time.split(":").map(Number);
 
-          const sessionDateTime = moment(session.date).set({
+          const sessionDateTime = moment(session.date).tz("Africa/Cairo").set({
             hour: startHour,
             minute: startMinute,
             second: 0,
@@ -68,7 +73,7 @@ export async function cronToCheckSubscription() {
           });
 
           const diffInMinutes = sessionDateTime.diff(now, "minutes");
-          console.log("Difference in minutes:", diffInMinutes, session);
+          console.log("Difference in minutes:", diffInMinutes);
           // ~24 hours = 1440 minutes ± 30 (to cover full hour)
           if (diffInMinutes >= 1410 && diffInMinutes <= 1470) {
             // console.log( `🔔 Session starts in ~24 hours for user: ${session.userId.email}` );
@@ -163,7 +168,7 @@ export async function cronToCheckSubscription() {
           .split(":")
           .map(Number);
 
-        const sessionDateTime = moment(session.date).set({
+        const sessionDateTime = moment(session.date).tz("Africa/Cairo").set({
           hour: startHour,
           minute: startMinute,
           second: 0,
@@ -182,7 +187,12 @@ export async function cronToCheckSubscription() {
             const isEmailSentClient = await sendEmailService({
               to: session.userId.email,
               subject: "تذكير بالجلسة بتاعتك غدا ⏰",
-              message: reminder24SessionTemplate(session.userId.username, session.therapistId.full_name, session.startTime, `${process.env.CLIENT_URL}/session-questions/${session._id}`),
+              message: reminder24SessionTemplate(
+                session.userId.username,
+                session.therapistId.full_name,
+                session.startTime,
+                `${process.env.CLIENT_URL}/session-questions/${session._id}`
+              ),
             });
             if (!isEmailSentClient)
               return next({ message: "Email is not sent", cause: 500 });
@@ -191,11 +201,11 @@ export async function cronToCheckSubscription() {
             const isEmailSentTherapist = await sendEmailService({
               to: session.therapistId.email,
               subject: "⏰ تذكير بجلسة غدًا",
-              message:  reminder24SessionTemplateTherapist(
+              message: reminder24SessionTemplateTherapist(
                 session.therapistId.full_name,
                 session.userId.username,
                 session.startTime
-              )
+              ),
             });
             if (!isEmailSentTherapist)
               return next({ message: "Email is not sent", cause: 500 });
@@ -211,7 +221,7 @@ export async function cronToCheckSubscription() {
         }
 
         // ~1 hour = 60 minutes ± 30 (to cover full hour)
-        if (diffInMinutes >= 30 && diffInMinutes <= 90) {
+        if (diffInMinutes >= 0 && diffInMinutes <= 90) {
           console.log(
             `⏰ Session starts in ~1 hour for user: ${session.userId.email}`
           );
